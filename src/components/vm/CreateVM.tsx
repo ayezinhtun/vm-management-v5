@@ -41,6 +41,8 @@ export const CreateVM: React.FC<CreateVMProps> = ({onNavigate}) => {
     cpu_ghz: 0,
     ram: '',
     storage: '',
+    os_type: '',
+    os_version: '',
     services: '',
     creation_date: new Date().toISOString().split('T')[0],
     service_start_date: '',
@@ -150,6 +152,7 @@ export const CreateVM: React.FC<CreateVMProps> = ({onNavigate}) => {
     if (!formData.service_start_date) newErrors.service_start_date = 'Service start date is required';
     if (!formData.service_end_date) newErrors.service_end_date = 'Service end date is required';
     if (!formData.password_changer.trim()) newErrors.password_changer = 'Password changer is required';
+    
 
     // Validate resource allocation
     if (nodeResources) {
@@ -284,6 +287,8 @@ about the code for other developers who may be working on the project. */
           cpu_ghz: 0,
           ram: '',
           storage: '',
+          os_type: '',
+          os_version: '',
           services: '',
           creation_date: new Date().toISOString().split('T')[0],
           service_start_date: '',
@@ -413,6 +418,16 @@ about the code for other developers who may be working on the project. */
 
       <Card className="p-6">
         <div className="space-y-8">
+        {Object.keys(errors).length > 0 && (
+  <div className="mb-4 p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm">
+    <div className="font-semibold mb-1">Please fix the following:</div>
+    <ul className="list-disc ml-5">
+      {Object.entries(errors).map(([field, message]) => (
+        <li key={field}>{message}</li>
+      ))}
+    </ul>
+  </div>
+)}
           {/* Infrastructure Selection */}
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Infrastructure Selection</h3>
@@ -434,7 +449,7 @@ about the code for other developers who may be working on the project. */
                 </select>
               </FormField>
 
-              {/* <FormField label="Select Node" required error={errors.node_id}>
+              <FormField label="Select Node" required error={errors.node_id}>
                 <select
                   value={selectedNode}
                   onChange={(e) => setSelectedNode(e.target.value)}
@@ -450,7 +465,7 @@ about the code for other developers who may be working on the project. */
                     </option>
                   ))}
                 </select>
-              </FormField> */}
+              </FormField>
 
               
 
@@ -588,6 +603,22 @@ about the code for other developers who may be working on the project. */
                     Available: {nodeResources.available_storage_gb} GB
                   </p>
                 )}
+              </FormField>
+
+              <FormField label="OS Type">
+                <Input
+                  value={formData.os_type}
+                  onChange={(e) => setFormData({ ...formData, os_type: e.target.value })}
+                  placeholder="e.g., Windows Server, Ubuntu, CentOS"
+                />
+              </FormField>
+
+              <FormField label="OS Version">
+                <Input
+                  value={formData.os_version}
+                  onChange={(e) => setFormData({ ...formData, os_version: e.target.value })}
+                  placeholder="e.g., 2022, 22.04 LTS"
+                />
               </FormField>
 
               <FormField label="Services" required error={errors.services}>

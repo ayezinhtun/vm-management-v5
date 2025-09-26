@@ -49,10 +49,24 @@ const menuItems = [
       { id: 'contracts', label: 'Contracts', icon: FileText }
     ]
   },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { id: 'activity-logs', label: 'Activity Logs', icon: Clock },
-  { id: 'audit-logs', label: 'Audit Logs', icon: Activity },
-  { id: 'import-export', label: 'Import/Export', icon: FileText }
+  // { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  // { id: 'activity-logs', label: 'Activity Logs', icon: Clock },
+  // { id: 'audit-logs', label: 'Audit Logs', icon: Activity },
+  // { id: 'import-export', label: 'Import/Export', icon: FileText }
+
+  {
+    id: 'reports-logs',
+    label: 'Reports & Logs',
+    icon: BarChart3, 
+    hasDropdown: true,
+    children: [
+      { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+      { id: 'activity-logs', label: 'Activity Logs', icon: Clock },
+      { id: 'audit-logs', label: 'Audit Logs', icon: Activity },
+      { id: 'import-export', label: 'Import/Export', icon: FileText }
+    ]
+  }
+  
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {

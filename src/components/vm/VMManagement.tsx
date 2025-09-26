@@ -510,6 +510,15 @@ export const VMManagement: React.FC<VMManagementProps> = ({ onNavigate }) => {
                     <span className="font-medium text-gray-600">Storage:</span> 
                     <span>{selectedVM.storage}</span>
                   </div>
+
+                  <div className="flex justify-between">
+                    <span className="font-medium text-gray-600">OS Type:</span> 
+                    <span>{selectedVM.os_type || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium text-gray-600">OS Version:</span> 
+                    <span>{selectedVM.os_version || 'N/A'}</span>
+                  </div>
                   <div className="flex justify-between">
                     <span className="font-medium text-gray-600">Services:</span> 
                     <span>{selectedVM.services || 'N/A'}</span>
@@ -658,6 +667,22 @@ export const VMManagement: React.FC<VMManagementProps> = ({ onNavigate }) => {
                   value={editFormData.storage || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, storage: e.target.value })}
                   placeholder="e.g., 100 GB SSD"
+                />
+              </FormField>
+
+              <FormField label="OS Type">
+                <Input
+                  value={editFormData.os_type || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, os_type: e.target.value })}
+                  placeholder="e.g., Windows Server, Ubuntu, CentOS"
+                />
+              </FormField>
+
+              <FormField label="OS Version">
+                <Input
+                  value={editFormData.os_version || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, os_version: e.target.value })}
+                  placeholder="e.g., 2022, 22.04 LTS"
                 />
               </FormField>
 

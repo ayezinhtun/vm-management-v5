@@ -122,6 +122,8 @@ export interface VM {
   cpu_ghz: number;
   ram: string;
   storage: string;
+  os_type?: string;
+  os_version?: string;
   services: string;
   creation_date: string;
   service_start_date: string;
