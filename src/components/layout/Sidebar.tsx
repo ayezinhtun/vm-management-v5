@@ -13,7 +13,12 @@ import {
   BarChart3,
   Clock,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Layers,
+  Cpu,
+  Monitor,
+  FileCheck,
+  UploadCloud
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -32,9 +37,9 @@ const menuItems = [
     icon: Server,
     hasDropdown: true,
     children: [
-      { id: 'clusters', label: 'Cluster Management', icon: Server },
-      { id: 'nodes', label: 'Node Management', icon: Server },
-      { id: 'vms', label: 'VM Management', icon: Server }
+      { id: 'clusters', label: 'Cluster Management', icon: Layers },
+      { id: 'nodes', label: 'Node Management', icon: Cpu },
+      { id: 'vms', label: 'VM Management', icon: Monitor }
     ]
   },
   // { id: 'create-vm', label: 'Create VM', icon: Plus },
@@ -62,8 +67,8 @@ const menuItems = [
     children: [
       { id: 'analytics', label: 'Analytics', icon: BarChart3 },
       { id: 'activity-logs', label: 'Activity Logs', icon: Clock },
-      { id: 'audit-logs', label: 'Audit Logs', icon: Activity },
-      { id: 'import-export', label: 'Import/Export', icon: FileText }
+      { id: 'audit-logs', label: 'Audit Logs', icon: FileCheck },
+      { id: 'import-export', label: 'Import/Export', icon: UploadCloud }
     ]
   }
   
