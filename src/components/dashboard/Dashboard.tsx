@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Server, 
+import {
+  Server,
   Users, 
   Shield, 
   FileText, 
   Activity,
-  TrendingUp,
   AlertTriangle,
   Clock,
   Calendar,
   DollarSign,
   Cpu,
   HardDrive,
-  Zap,
   Eye,
   Database
 } from 'lucide-react';
