@@ -262,7 +262,7 @@ export const CustomerManagement: React.FC = () => {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Expiring Soon</p>
+              <p className="text-sm font-medium text-gray-600">Expiring Soon Contract</p>
               <p className="text-3xl font-bold text-amber-600">
                 {customers.reduce((sum, customer) => {
                   const contracts = getCustomerContracts(customer.id);

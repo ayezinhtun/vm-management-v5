@@ -164,19 +164,38 @@ export const ClusterManagement: React.FC = () => {
   const exportData = () => {
     const csvContent = [
       ['Cluster Name', 'Code', 'Purpose', 'Location', 'Status', 'CPU (GHz)', 'RAM (GB)', 'Storage (GB)', 'Nodes', 'VMs', 'Created'].join(','),
-      ...filteredClusters.map(cluster => [
-        cluster.cluster_name,
-        cluster.cluster_code,
-        cluster.cluster_purpose,
-        cluster.cluster_location,
-        cluster.status,
-        cluster.total_cpu_ghz.toString(),
-        cluster.total_ram_gb.toString(),
-        cluster.total_storage_gb.toString(),
-        cluster.node_count.toString(),
-        cluster.vm_count.toString(),
-        new Date(cluster.created_at).toLocaleDateString()
-      ].join(','))
+      // ...filteredClusters.map(cluster => [
+      //   cluster.cluster_name,
+      //   cluster.cluster_code,
+      //   cluster.cluster_purpose,
+      //   cluster.cluster_location,
+      //   cluster.status,
+      //   cluster.total_cpu_ghz.toString(),
+      //   cluster.total_ram_gb.toString(),
+      //   cluster.total_storage_gb.toString(),
+      //   cluster.node_count.toString(),
+      //   cluster.vm_count.toString(),
+      //   new Date(cluster.created_at).toLocaleDateString()
+      // ].join(','))
+
+      ...filteredClusters.map(cluster => {
+        const clusterNodes = Array.isArray(nodes) ? nodes.filter(n => n.cluster_id === cluster.id) : [];
+        const clusterVMs = Array.isArray(vms) ? vms.filter(vm => vm.cluster_id === cluster.id) : [];
+        return [
+          cluster.cluster_name,
+          cluster.cluster_code,
+          cluster.cluster_purpose,
+          cluster.cluster_location,
+          cluster.status,
+          String(cluster.total_cpu_ghz),
+          String(cluster.total_ram_gb),
+          String(cluster.total_storage_gb),
+          String(clusterNodes.length),
+          String(clusterVMs.length),
+          new Date(cluster.created_at).toLocaleDateString()
+        ].join(',');
+      })
+      
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -226,10 +245,10 @@ export const ClusterManagement: React.FC = () => {
         // const ramUtil = cluster.total_ram_gb > 0 ? (cluster.allocated_ram_gb / cluster.total_ram_gb * 100) : 0;
 
         const clusterVMs = vms.filter(vm => vm.cluster_id === cluster.id && vm.status === 'Active');
-const allocatedCPU = clusterVMs.reduce((sum, vm) => sum + vm.cpu_ghz, 0);
-const allocatedRAM = clusterVMs.reduce((sum, vm) => sum + parseInt(vm.ram), 0);
-const cpuUtil = cluster.total_cpu_ghz > 0 ? (allocatedCPU / cluster.total_cpu_ghz * 100) : 0;
-const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb * 100) : 0;
+      const allocatedCPU = clusterVMs.reduce((sum, vm) => sum + vm.cpu_ghz, 0);
+      const allocatedRAM = clusterVMs.reduce((sum, vm) => sum + parseInt(vm.ram), 0);
+      const cpuUtil = cluster.total_cpu_ghz > 0 ? (allocatedCPU / cluster.total_cpu_ghz * 100) : 0;
+      const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb * 100) : 0;
         return (
           <div className="text-sm">
             <div>CPU: {cpuUtil.toFixed(1)}%</div>
@@ -238,15 +257,29 @@ const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb 
         );
       }
     },
-    { 
-      key: 'counts', 
-      label: 'Nodes/VMs', 
-      render: (value: any, cluster: Cluster) => (
-        <div className="text-sm">
-          <div className="font-medium">{cluster.node_count} Nodes</div>
-          <div className="text-gray-500">{cluster.vm_count} VMs</div>
-        </div>
-      )
+    // { 
+    //   key: 'counts', 
+    //   label: 'Nodes/VMs', 
+    //   render: (value: any, cluster: Cluster) => (
+    //     <div className="text-sm">
+    //       <div className="font-medium">{cluster.node_count} Nodes</div>
+    //       <div className="text-gray-500">{cluster.vm_count} VMs</div>
+    //     </div>
+    //   )
+    // },
+    {
+      key: 'counts',
+      label: 'Nodes/VMs',
+      render: (value: any, cluster: Cluster) => {
+        const clusterNodes = Array.isArray(nodes) ? nodes.filter(n => n.cluster_id === cluster.id) : [];
+        const clusterVMs = Array.isArray(vms) ? vms.filter(vm => vm.cluster_id === cluster.id) : [];
+        return (
+          <div className="text-sm">
+            <div className="font-medium">{clusterNodes.length} Nodes</div>
+            <div className="text-gray-500">{clusterVMs.length} VMs</div>
+          </div>
+        );
+      }
     },
     { 
       key: 'created_at', 
@@ -352,7 +385,10 @@ const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb 
             <div>
               <p className="text-sm text-gray-600">Total Nodes</p>
               <p className="text-2xl font-bold text-purple-600">
-                {clusters?.reduce((sum, cluster) => sum + cluster.node_count, 0) || 0}
+                {/* {clusters?.reduce((sum, cluster) => sum + cluster.node_count, 0) || 0} */}
+
+                {Array.isArray(nodes) ? nodes.length : 0}
+
               </p>
             </div>
             <div className="p-2 bg-purple-100 rounded-lg">
@@ -366,7 +402,9 @@ const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb 
             <div>
               <p className="text-sm text-gray-600">Total VMs</p>
               <p className="text-2xl font-bold text-orange-600">
-                {clusters?.reduce((sum, cluster) => sum + cluster.vm_count, 0) || 0}
+                {/* {clusters?.reduce((sum, cluster) => sum + cluster.vm_count, 0) || 0} */}
+
+                {Array.isArray(vms) ? vms.length : 0}
               </p>
             </div>
             <div className="p-2 bg-orange-100 rounded-lg">
@@ -580,6 +618,23 @@ const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb 
                   placeholder="Production Cluster 01"
                 />
               </FormField>
+              <FormField label='Cluster Type'>
+                <Input
+                value={editFormData.cluster_type || ''}
+                onChange={(e) => setEditFormData({...editFormData, cluster_type: e.target.value})}
+                placeholder='VMware vShere, Hyper-V,etc'
+                >
+                </Input>
+              </FormField>
+
+              <FormField label='Cluster Code/ID'>
+                <Input
+                value={editFormData.cluster_code || ''}
+                onChange={(e) => setEditFormData({...editFormData, cluster_code: e.target.value})}
+                placeholder='PROD-CL-01'
+                >
+                </Input>
+              </FormField>
 
               <FormField label="Status" required>
                 <select
@@ -620,6 +675,20 @@ const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb 
                   onChange={(e) => setEditFormData({ ...editFormData, total_ram_gb: parseInt(e.target.value) || 0 })}
                   placeholder="1024"
                 />
+              </FormField>
+
+              <FormField label='Storage Type'>
+                <select name="" id=""
+                  value={editFormData.storage_type || 'SSD'}
+                  onChange={(e) => setEditFormData({...editFormData, storage_type: e.target.value as any})}
+                  className='w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+                >
+                  <option value="NVMe">NVMe</option>
+                  <option value="SSD">SSD</option>
+                  <option value="HDD">HDD</option>
+                  <option value="Normal">Normal</option>
+                </select>
+                
               </FormField>
 
               <FormField label="Total Storage" required>
@@ -668,8 +737,8 @@ const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb 
         size="xl"
       >
         {selectedCluster && (() => {
-          const clusterVMs = vms.filter(vm => vm.cluster_id === selectedCluster.id && vm.status === 'Active');
-          const allocatedCPU = clusterVMs.reduce((sum, vm) => sum + vm.cpu_ghz, 0);
+           const clusterNodes = Array.isArray(nodes) ? nodes.filter(n => n.cluster_id === selectedCluster.id) : [];
+           const clusterVMs = Array.isArray(vms) ? vms.filter(vm => vm.cluster_id === selectedCluster.id && vm.status === 'Active') : [];          const allocatedCPU = clusterVMs.reduce((sum, vm) => sum + vm.cpu_ghz, 0);
           const availableCPU = selectedCluster.total_cpu_ghz - allocatedCPU;
           const allocatedRAM = clusterVMs.reduce((sum, vm) => sum + parseInt(vm.ram), 0);
           const availableRAM = selectedCluster.total_ram_gb - allocatedRAM;
@@ -683,6 +752,10 @@ const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb 
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Name:</span> 
                       <span>{selectedCluster.cluster_name}</span>
+                    </div>
+                    <div className='flex justify-between'>
+                      <span className='font-medium text-gray-600'>Cluster Type:</span>
+                      <span>{selectedCluster.cluster_type || '_'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Code:</span> 
@@ -736,17 +809,22 @@ const ramUtil = cluster.total_ram_gb > 0 ? (allocatedRAM / cluster.total_ram_gb 
                       <span className="font-medium text-gray-600">Available RAM:</span> 
                       <span className="text-green-600">{availableRAM} GB</span>
                     </div>
+                    <div className='flex justify-between'>
+                      <span>Storage Type:</span>
+                      <span>{selectedCluster.storage_type || '_'}</span>
+
+                    </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Total Storage:</span> 
                       <span>{selectedCluster.total_storage_gb} GB ({selectedCluster.storage_type})</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Nodes:</span> 
-                      <span>{selectedCluster.node_count}</span>
+                      <span>{clusterNodes.length}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">VMs:</span> 
-                      <span>{selectedCluster.vm_count}</span>
+                      <span>{clusterVMs.length}</span>
                     </div>
                   </div>
                 </div>

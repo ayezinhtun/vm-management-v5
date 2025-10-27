@@ -801,6 +801,211 @@ export const NodeManagement: React.FC = () => {
               </FormField>
             </div>
 
+            {/* CPU Specifications */}
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-4">CPU Specifications</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField label="CPU Vendor" required>
+                  <select
+                    value={editFormData.cpu_vendor || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, cpu_vendor: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Intel">Intel</option>
+                    <option value="AMD">AMD</option>
+                  </select>
+                </FormField>
+
+                <FormField label="CPU Model" required>
+                  <Input
+                    value={editFormData.cpu_model || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, cpu_model: e.target.value })}
+                    placeholder="Xeon Gold 6338, EPYC 7xxx"
+                  />
+                </FormField>
+
+                <FormField label="Physical Cores" required>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={editFormData.total_physical_cores ?? 0}
+                    onChange={(e) => setEditFormData({ ...editFormData, total_physical_cores: parseInt(e.target.value) || 0 })}
+                    placeholder="16"
+                  />
+                </FormField>
+
+                <FormField label="Logical Threads" required>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={editFormData.total_logical_threads ?? 0}
+                    onChange={(e) => setEditFormData({ ...editFormData, total_logical_threads: parseInt(e.target.value) || 0 })}
+                    placeholder="32"
+                  />
+                </FormField>
+
+                <FormField label="Clock Speed (GHz)" required>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    value={editFormData.cpu_clock_speed_ghz ?? 0}
+                    onChange={(e) => setEditFormData({ ...editFormData, cpu_clock_speed_ghz: parseFloat(e.target.value) || 0 })}
+                    placeholder="2.4"
+                  />
+                </FormField>
+              </div>
+            </div>
+
+            {/* RAM Specifications */}
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-4">RAM Specifications</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField label="Total RAM (GB)" required>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={editFormData.total_ram_gb ?? 0}
+                    onChange={(e) => setEditFormData({ ...editFormData, total_ram_gb: parseInt(e.target.value) || 0 })}
+                    placeholder="512"
+                  />
+                </FormField>
+
+                <FormField label="RAM Type" required>
+                  <select
+                    value={editFormData.ram_type || 'DDR4'}
+                    onChange={(e) => setEditFormData({ ...editFormData, ram_type: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="DDR4">DDR4</option>
+                    <option value="DDR5">DDR5</option>
+                    <option value="ECC Registered">ECC Registered</option>
+                  </select>
+                </FormField>
+
+                <FormField label="DIMM Slots Used">
+                  <Input
+                    type="number"
+                    min="0"
+                    value={editFormData.dimm_slots_used ?? 0}
+                    onChange={(e) => setEditFormData({ ...editFormData, dimm_slots_used: parseInt(e.target.value) || 0 })}
+                    placeholder="8"
+                  />
+                </FormField>
+
+                <FormField label="Total DIMM Slots">
+                  <Input
+                    type="number"
+                    min="0"
+                    value={editFormData.dimm_slots_total ?? 0}
+                    onChange={(e) => setEditFormData({ ...editFormData, dimm_slots_total: parseInt(e.target.value) || 0 })}
+                    placeholder="16"
+                  />
+                </FormField>
+              </div>
+            </div>
+
+            {/* Storage Specifications */}
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-4">Storage Specifications</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField label="Storage Type" required>
+                  <select
+                    value={editFormData.storage_type || 'SSD'}
+                    onChange={(e) => setEditFormData({ ...editFormData, storage_type: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="NVMe">NVMe</option>
+                    <option value="SSD">SSD</option>
+                    <option value="HDD">HDD</option>
+                    <option value="Normal SATA">Normal SATA</option>
+                  </select>
+                </FormField>
+
+                <FormField label="Storage Capacity (GB)" required>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={editFormData.storage_capacity_gb ?? 0}
+                    onChange={(e) => setEditFormData({ ...editFormData, storage_capacity_gb: parseInt(e.target.value) || 0 })}
+                    placeholder="2000"
+                  />
+                </FormField>
+
+                <FormField label="RAID Configuration" required>
+                  <select
+                    value={editFormData.raid_configuration || 'RAID 1'}
+                    onChange={(e) => setEditFormData({ ...editFormData, raid_configuration: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="RAID 1">RAID 1</option>
+                    <option value="RAID 5">RAID 5</option>
+                    <option value="RAID 10">RAID 10</option>
+                    <option value="JBOD">JBOD</option>
+                    <option value="None">None</option>
+                  </select>
+                </FormField>
+
+                <FormField label="Disk Vendor/Model">
+                  <Input
+                    value={editFormData.disk_vendor_model || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, disk_vendor_model: e.target.value })}
+                    placeholder="Samsung 980 PRO"
+                  />
+                </FormField>
+              </div>
+            </div>
+
+            {/* Network Specifications */}
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-4">Network Specifications</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField label="NIC Count" required>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={editFormData.nic_count ?? 1}
+                    onChange={(e) => setEditFormData({ ...editFormData, nic_count: parseInt(e.target.value) || 1 })}
+                    placeholder="2"
+                  />
+                </FormField>
+
+                <FormField label="NIC Speed" required>
+                  <select
+                    value={editFormData.nic_speed || '1GbE'}
+                    onChange={(e) => setEditFormData({ ...editFormData, nic_speed: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="1GbE">1GbE</option>
+                    <option value="10GbE">10GbE</option>
+                    <option value="25GbE">25GbE</option>
+                    <option value="40GbE">40GbE</option>
+                    <option value="100GbE">100GbE</option>
+                  </select>
+                </FormField>
+
+                <FormField label="Teaming/Bonding">
+                  <Input
+                    value={editFormData.teaming_bonding || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, teaming_bonding: e.target.value })}
+                    placeholder="LACP, Active-Backup"
+                  />
+                </FormField>
+
+                <FormField label="VLAN Tagging Support">
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={!!editFormData.vlan_tagging_support}
+                      onChange={(e) => setEditFormData({ ...editFormData, vlan_tagging_support: e.target.checked })}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Enable VLAN tagging</span>
+                  </label>
+                </FormField>
+              </div>
+            </div>
+
             <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
               <Button variant="outline" onClick={() => setShowEditModal(false)}>
                 Cancel

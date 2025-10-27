@@ -27,6 +27,12 @@ export const VMManagement: React.FC<VMManagementProps> = ({ onNavigate }) => {
   const [editingVM, setEditingVM] = useState<VM | null>(null);
   const [sortField, setSortField] = useState<string>('created_at');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [selectedCluster, setSelectedCluster] = useState<string>('');
+  const [selectedNode, setSelectedNode] = useState<string>('');
+  const [availableNodes, setAvailableNodes] = useState<any[]>([]);
+  const [nodeResources, setNodeResources] = useState<any>(null);
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+
 
   // Edit form state
   const [editFormData, setEditFormData] = useState<Partial<VM>>({});
@@ -110,14 +116,137 @@ export const VMManagement: React.FC<VMManagementProps> = ({ onNavigate }) => {
     }
   };
 
+// Initialize selections when opening edit
+useEffect(() => {
+  if (showEditModal && editingVM) {
+    setSelectedCluster(editingVM.cluster_id || '');
+    setSelectedNode(editingVM.node_id || '');
+  }
+}, [showEditModal, editingVM]);
+
+// Update available nodes when cluster changes
+useEffect(() => {
+  if (selectedCluster) {
+    const list = (nodes || []).filter(n => n.cluster_id === selectedCluster);
+    setAvailableNodes(list);
+    setEditFormData(prev => ({ ...prev, cluster_id: selectedCluster, node_id: '' }));
+    setSelectedNode('');
+  } else {
+    setAvailableNodes([]);
+    setSelectedNode('');
+  }
+}, [selectedCluster, nodes]);
+
+// Keep edit form node_id in sync
+useEffect(() => {
+  if (selectedNode) {
+    setEditFormData(prev => ({ ...prev, node_id: selectedNode }));
+  }
+}, [selectedNode]);
+
+useEffect(() => {
+  if (selectedNode) {
+    const node = nodes.find(n => n.id === selectedNode);
+    setNodeResources(node || null);
+  } else {
+    setNodeResources(null);
+  }
+}, [selectedNode, nodes]);
+
+// Dynamic list helpers for edit arrays
+const addPrivateIP = () => {
+  const current = Array.isArray(editFormData.private_ips) ? editFormData.private_ips : (editFormData.private_ips ? String(editFormData.private_ips).split(',').map(s=>s.trim()).filter(Boolean) : []);
+  setEditFormData({ ...editFormData, private_ips: [...current, ''] });
+};
+const removePrivateIP = (index: number) => {
+  const current = Array.isArray(editFormData.private_ips) ? [...editFormData.private_ips] : [];
+  if (current.length <= 1) return;
+  current.splice(index, 1);
+  setEditFormData({ ...editFormData, private_ips: current });
+};
+const updatePrivateIP = (index: number, value: string) => {
+  const current = Array.isArray(editFormData.private_ips) ? [...editFormData.private_ips] : [''];
+  current[index] = value;
+  setEditFormData({ ...editFormData, private_ips: current });
+};
+
+const addAllowedPort = () => {
+  const current = Array.isArray(editFormData.allowed_ports) ? editFormData.allowed_ports : (editFormData.allowed_ports ? String(editFormData.allowed_ports).split(',').map(s=>s.trim()).filter(Boolean) : []);
+  setEditFormData({ ...editFormData, allowed_ports: [...current, ''] });
+};
+const removeAllowedPort = (index: number) => {
+  const current = Array.isArray(editFormData.allowed_ports) ? [...editFormData.allowed_ports] : [];
+  if (current.length <= 1) return;
+  current.splice(index, 1);
+  setEditFormData({ ...editFormData, allowed_ports: current });
+};
+const updateAllowedPort = (index: number, value: string) => {
+  const current = Array.isArray(editFormData.allowed_ports) ? [...editFormData.allowed_ports] : [''];
+  current[index] = value;
+  setEditFormData({ ...editFormData, allowed_ports: current });
+};
+
+const validateEditForm = (): boolean => {
+  const errs: Record<string, string> = {};
+
+  const cpuGhz = Number(editFormData.cpu_ghz || 0);
+  const reqRam = parseInt(String(editFormData.ram || '').split(' ')[0]) || 0;
+  const reqStorage = parseInt(String(editFormData.storage || '').split(' ')[0]) || 0;
+
+  if (nodeResources) {
+    if (cpuGhz > nodeResources.available_cpu_ghz) {
+      errs.cpu_ghz = `Insufficient CPU. Available: ${nodeResources.available_cpu_ghz} GHz`;
+    }
+    if (reqRam > nodeResources.available_ram_gb) {
+      errs.ram = `Insufficient RAM. Available: ${nodeResources.available_ram_gb} GB`;
+    }
+    if (reqStorage > nodeResources.available_storage_gb) {
+      errs.storage = `Insufficient Storage. Available: ${nodeResources.available_storage_gb} GB`;
+    }
+  }
+
+  setEditErrors(errs);
+  return Object.keys(errs).length === 0;
+};
+
+  // const handleEditSubmit = async () => {
+
+    
+  //   if (!editingVM || !editFormData) return;
+
+  //   try {
+  //     await updateVM(editingVM.id, editFormData);
+  //     setShowEditModal(false);
+  //     setEditingVM(null);
+  //     setEditFormData({});
+  //   } catch (error) {
+  //     console.error('Edit submit error:', error);
+  //   }
+  // };
+
   const handleEditSubmit = async () => {
     if (!editingVM || !editFormData) return;
-
+  
+    if (!validateEditForm()) {
+      showToast.warning('Please fix the highlighted errors.');
+      return;
+    }
+  
     try {
-      await updateVM(editingVM.id, editFormData);
+      // Clean up arrays like in Create
+      const cleaned: Partial<VM> = {
+        ...editFormData,
+        private_ips: (Array.isArray(editFormData.private_ips) ? editFormData.private_ips : String(editFormData.private_ips || '').split(','))
+          .map(s => String(s).trim()).filter(Boolean),
+        allowed_ports: (Array.isArray(editFormData.allowed_ports) ? editFormData.allowed_ports : String(editFormData.allowed_ports || '').split(','))
+          .map(s => String(s).trim()).filter(Boolean),
+      };
+  
+      await updateVM(editingVM.id, cleaned);
       setShowEditModal(false);
       setEditingVM(null);
       setEditFormData({});
+      setEditErrors({});
     } catch (error) {
       console.error('Edit submit error:', error);
     }
@@ -622,7 +751,7 @@ export const VMManagement: React.FC<VMManagementProps> = ({ onNavigate }) => {
         title={`Edit VM - ${editingVM?.vm_name}`}
         size="xl"
       >
-        {editingVM && (
+        {/* {editingVM && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField label="VM Name" required>
@@ -811,7 +940,332 @@ export const VMManagement: React.FC<VMManagementProps> = ({ onNavigate }) => {
               </Button>
             </div>
           </div>
-        )}
+        )} */}
+
+      {editingVM && (
+        <div className="space-y-8">
+          {/* Infrastructure Selection */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Infrastructure Selection</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField label="Customer" required>
+                <select
+                  value={editFormData.customer_id || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, customer_id: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                >
+                  <option value="">Select customer department</option>
+                  {customers.map(customer => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.department_name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Select Cluster" required>
+                <select
+                  value={selectedCluster}
+                  onChange={(e) => setSelectedCluster(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                >
+                  <option value="">Select cluster</option>
+                  {clusters?.map(cluster => (
+                    <option key={cluster.id} value={cluster.id}>
+                      {cluster.cluster_name} ({cluster.cluster_code}) - {cluster.cluster_purpose}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Select Node" required>
+                <select
+                  value={selectedNode}
+                  onChange={(e) => setSelectedNode(e.target.value)}
+                  disabled={!selectedCluster}
+                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    !selectedCluster ? 'bg-gray-100 cursor-not-allowed' : 'border-gray-300'
+                  }`}
+                >
+                  <option value="">Select node</option>
+                  {availableNodes.map(node => (
+                    <option key={node.id} value={node.id}>
+                      {node.node_name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            </div>
+          </div>
+
+          {/* VM Configuration */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">VM Configuration</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField label="VM Name" required>
+                <Input
+                  value={editFormData.vm_name || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, vm_name: e.target.value })}
+                  placeholder="Enter VM name"
+                />
+              </FormField>
+
+              <FormField label="Status" required>
+                <select
+                  value={editFormData.status || 'Active'}
+                  onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value as any })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Terminated">Terminated</option>
+                </select>
+              </FormField>
+
+              <FormField label="CPU Specification" required>
+                <Input
+                  value={editFormData.cpu || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, cpu: e.target.value })}
+                  placeholder="e.g., 4 vCPU"
+                />
+              </FormField>
+
+              <FormField label="CPU Allocation (GHz)" required>
+              <Input
+                type="number"
+                step="0.1"
+                min="0.1"
+                max={nodeResources?.available_cpu_ghz ?? undefined}
+                value={Number(editFormData.cpu_ghz || 0)}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value) || 0;
+                  const maxV = nodeResources?.available_cpu_ghz ?? Infinity;
+                  setEditFormData({ ...editFormData, cpu_ghz: Math.min(v, maxV) });
+                }}
+                placeholder="e.g., 2.4"
+              />
+              {nodeResources && (
+                <p className="text-xs text-gray-500 mt-1">Available: {nodeResources.available_cpu_ghz} GHz</p>
+              )}
+              {editErrors.cpu_ghz && <p className="text-xs text-red-600 mt-1">{editErrors.cpu_ghz}</p>}
+            </FormField>
+
+            <FormField label="RAM" required>
+            <Input
+              value={editFormData.ram || ''}
+              onChange={(e) => setEditFormData({ ...editFormData, ram: e.target.value })}
+              placeholder="e.g., 8 GB"
+            />
+            {nodeResources && (
+              <p className="text-xs text-gray-500 mt-1">Available: {nodeResources.available_ram_gb} GB</p>
+            )}
+            {editErrors.ram && <p className="text-xs text-red-600 mt-1">{editErrors.ram}</p>}
+          </FormField>
+
+              <FormField label="OS Type">
+                <Input
+                  value={editFormData.os_type || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, os_type: e.target.value })}
+                  placeholder="e.g., Windows Server, Ubuntu, CentOS"
+                />
+              </FormField>
+
+              <FormField label="OS Version">
+                <Input
+                  value={editFormData.os_version || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, os_version: e.target.value })}
+                  placeholder="e.g., 2022, 22.04 LTS"
+                />
+              </FormField>
+
+              <FormField label="Services" required>
+                <Input
+                  value={editFormData.services || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, services: e.target.value })}
+                  placeholder="e.g., Web Server, Database"
+                />
+              </FormField>
+            </div>
+          </div>
+
+          {/* Custom Fields */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Custom Fields</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField label="Backup Enabled">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={editFormData.custom_fields?.backup_enabled === 'true' || editFormData.custom_fields?.backup_enabled === true}
+                    onChange={(e) =>
+                      setEditFormData({
+                        ...editFormData,
+                        custom_fields: {
+                          ...editFormData.custom_fields,
+                          backup_enabled: e.target.checked,
+                        },
+                      })
+                    }
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">Enable automated backups</span>
+                </label>
+              </FormField>
+            </div>
+          </div>
+
+          {/* Network Configuration */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Network Configuration</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField label="Public IP">
+                <Input
+                  value={editFormData.public_ip || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, public_ip: e.target.value })}
+                  placeholder="203.0.113.10"
+                />
+              </FormField>
+
+              <FormField label="Management IP">
+                <Input
+                  value={editFormData.management_ip || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, management_ip: e.target.value })}
+                  placeholder="10.0.0.100"
+                />
+              </FormField>
+            </div>
+
+            {/* Private IPs (dynamic list) */}
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-medium text-gray-700">
+                  Private IPs <span className="text-red-500">*</span>
+                </label>
+                <Button variant="outline" size="sm" onClick={addPrivateIP}>
+                  Add IP
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {(Array.isArray(editFormData.private_ips) ? editFormData.private_ips : (editFormData.private_ips ? String(editFormData.private_ips).split(',').map(s=>s.trim()) : [''])).map((ip, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <Input
+                      value={ip}
+                      onChange={(e) => updatePrivateIP(index, e.target.value)}
+                      placeholder="192.168.1.10"
+                      className="flex-1"
+                    />
+                    {(Array.isArray(editFormData.private_ips) ? editFormData.private_ips : ['']).length > 1 && (
+                      <Button variant="outline" size="sm" onClick={() => removePrivateIP(index)}>
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Allowed Ports (dynamic list) */}
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-medium text-gray-700">
+                  Allowed Ports (Firewall Rules) <span className="text-red-500">*</span>
+                </label>
+                <Button variant="outline" size="sm" onClick={addAllowedPort}>
+                  Add Port
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {(Array.isArray(editFormData.allowed_ports) ? editFormData.allowed_ports : (editFormData.allowed_ports ? String(editFormData.allowed_ports).split(',').map(s=>s.trim()) : [''])).map((port, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <Input
+                      value={port}
+                      onChange={(e) => updateAllowedPort(index, e.target.value)}
+                      placeholder="80, 443, 22"
+                      className="flex-1"
+                    />
+                    {(Array.isArray(editFormData.allowed_ports) ? editFormData.allowed_ports : ['']).length > 1 && (
+                      <Button variant="outline" size="sm" onClick={() => removeAllowedPort(index)}>
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Service & Password Information */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Service & Password Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField label="Service Start Date" required>
+                <Input
+                  type="date"
+                  value={editFormData.service_start_date || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, service_start_date: e.target.value })}
+                />
+              </FormField>
+
+              <FormField label="Service End Date" required>
+                <Input
+                  type="date"
+                  value={editFormData.service_end_date || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, service_end_date: e.target.value })}
+                />
+              </FormField>
+
+              <FormField label="Password Created Date" required>
+                <Input
+                  type="date"
+                  value={editFormData.password_created_date || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, password_created_date: e.target.value })}
+                />
+              </FormField>
+
+              <FormField label="Last Password Changed Date" required>
+                <Input
+                  type="date"
+                  value={editFormData.last_password_changed_date || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, last_password_changed_date: e.target.value })}
+                />
+              </FormField>
+
+              <FormField label="Next Password Due Date" required>
+                <Input
+                  type="date"
+                  value={editFormData.next_password_due_date || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, next_password_due_date: e.target.value })}
+                />
+              </FormField>
+
+              <FormField label="Password Changer" required>
+                <Input
+                  value={editFormData.password_changer || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, password_changer: e.target.value })}
+                  placeholder="Person who changed/owns the password"
+                />
+              </FormField>
+            </div>
+          </div>
+
+          {/* Remarks */}
+          <FormField label="Remarks">
+            <textarea
+              value={editFormData.remarks || ''}
+              onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
+              placeholder="Additional notes or remarks"
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </FormField>
+
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+            <Button variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
+            <Button onClick={handleEditSubmit} loading={loading}>Save Changes</Button>
+          </div>
+        </div>
+      )}
       </Modal>
     </motion.div>
   );
