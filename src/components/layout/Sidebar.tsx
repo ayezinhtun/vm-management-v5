@@ -33,7 +33,7 @@ const menuItems = [
   // { id: 'vms', label: 'VM Management', icon: Server },
   { 
     id: 'infrastructure', 
-    label: 'Infrastructure', 
+    label: 'Infrastruct', 
     icon: Server,
     hasDropdown: true,
     children: [
