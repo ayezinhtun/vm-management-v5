@@ -437,7 +437,7 @@ export const CreateVM: React.FC<CreateVMProps> = ({onNavigate}) => {
                     <div>
                       <p className="text-sm font-medium text-purple-900">Storage Available</p>
                       <p className="text-lg font-bold text-purple-700">{nodeResources.available_storage_gb} GB</p>
-                      <p className="text-xs text-purple-600">of {nodeResources.total_storage_gb} GB total</p>
+                      <p className="text-xs text-purple-600">of {nodeResources.storage_capacity_gb} GB total</p>
                     </div>
                   </div>
                 </div>
