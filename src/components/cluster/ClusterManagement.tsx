@@ -164,19 +164,6 @@ export const ClusterManagement: React.FC = () => {
   const exportData = () => {
     const csvContent = [
       ['Cluster Name', 'Code', 'Purpose', 'Location', 'Status', 'CPU (GHz)', 'RAM (GB)', 'Storage (GB)', 'Nodes', 'VMs', 'Created'].join(','),
-      // ...filteredClusters.map(cluster => [
-      //   cluster.cluster_name,
-      //   cluster.cluster_code,
-      //   cluster.cluster_purpose,
-      //   cluster.cluster_location,
-      //   cluster.status,
-      //   cluster.total_cpu_ghz.toString(),
-      //   cluster.total_ram_gb.toString(),
-      //   cluster.total_storage_gb.toString(),
-      //   cluster.node_count.toString(),
-      //   cluster.vm_count.toString(),
-      //   new Date(cluster.created_at).toLocaleDateString()
-      // ].join(','))
 
       ...filteredClusters.map(cluster => {
         const clusterNodes = Array.isArray(nodes) ? nodes.filter(n => n.cluster_id === cluster.id) : [];
@@ -257,16 +244,6 @@ export const ClusterManagement: React.FC = () => {
         );
       }
     },
-    // { 
-    //   key: 'counts', 
-    //   label: 'Nodes/VMs', 
-    //   render: (value: any, cluster: Cluster) => (
-    //     <div className="text-sm">
-    //       <div className="font-medium">{cluster.node_count} Nodes</div>
-    //       <div className="text-gray-500">{cluster.vm_count} VMs</div>
-    //     </div>
-    //   )
-    // },
     {
       key: 'counts',
       label: 'Nodes/VMs',

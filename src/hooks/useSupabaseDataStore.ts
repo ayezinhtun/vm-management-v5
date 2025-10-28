@@ -363,22 +363,6 @@ export const useSupabaseDataStore = () => {
     }
   };
 
-  // const updateNode = async (id: string, updates: Partial<Node>) => {
-  //   try {
-  //     setLoading(true);
-  //     const { data, error } = await supabase.from('nodes').update(updates).eq('id', id).select().single();
-  //     if (error) throw error;
-  //     setNodes(prev => prev.map(node => node.id === id ? data : node));
-  //     showToast.success('Node updated successfully');
-  //     return handleSupabaseSuccess(data, 'update node');
-  //   } catch (error) {
-  //     showToast.error('Failed to update node');
-  //     return handleSupabaseError(error, 'update node');
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
-
   const updateNode = async (id: string, updates: Partial<Node>) => {
     try {
       setLoading(true);

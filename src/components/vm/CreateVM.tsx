@@ -111,18 +111,7 @@ export const CreateVM: React.FC<CreateVMProps> = ({onNavigate}) => {
     }
   }, [formData.customer_id]);
 
-  // Auto-calculate password due date (3 months from creation)
-  // useEffect(() => {
-  //   if (formData.password_created_date) {
-  //     const createdDate = new Date(formData.password_created_date);
-  //     const dueDate = new Date(createdDate);
-  //     dueDate.setMonth(dueDate.getMonth() + 3);
-  //     setFormData(prev => ({
-  //       ...prev,
-  //       next_password_due_date: dueDate.toISOString().split('T')[0]
-  //     }));
-  //   }
-  // }, [formData.password_created_date]);
+  
 
     // Auto-calculate password due date (3 months from creation)
     useEffect(() => {
@@ -186,71 +175,7 @@ export const CreateVM: React.FC<CreateVMProps> = ({onNavigate}) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // const handleSubmit = async (asDraft = false) => {
-  //   if (!asDraft && !validateForm()) return;
-
-  //   try {
-  //     setIsDraft(asDraft);
-
-  //     // Clean up arrays with defensive checks
-  //     const cleanedFormData = {
-  //       ...formData,
-  //       private_ips: (formData.private_ips || []).filter(ip => ip.trim() !== ''),
-  //       allowed_ports: (formData.allowed_ports || []).filter(port => port.trim() !== '')
-  //     };
-
-  //     const result = await createVM(cleanedFormData);
-      
-  //     if (result.success) {
-  //       // Reset form
-  //       setFormData({
-  //         vm_name: '',
-  //         customer_id: '',
-  //         cluster_id: '',
-  //         node_id: '',
-  //         cpu: '',
-  //         cpu_ghz: 0,
-  //         ram: '',
-  //         storage: '',
-  //         services: '',
-  //         creation_date: new Date().toISOString().split('T')[0],
-  //         service_start_date: '',
-  //         service_end_date: '',
-  //         password_created_date: new Date().toISOString().split('T')[0],
-  //         last_password_changed_date: new Date().toISOString().split('T')[0],
-  //         next_password_due_date: '',
-  //         password_changer: '',
-  //         public_ip: '',
-  //         management_ip: '',
-  //         private_ips: [''],
-  //         allowed_ports: ['22', '80', '443'],
-  //         status: 'Active',
-  //         remarks: '',
-  //         custom_fields: {
-  //           environment: '',
-  //           backup_enabled: false,
-  //           access_level: 'medium'
-  //         }
-  //       });
-  //       setSelectedCluster('');
-  //       setSelectedNode('');
-  //       setSelectedContracts([]);
-  //       setSelectedGPAccounts([]);
-  //       setErrors({});
-  //     }
-  //   } catch (error) {
-  //     console.error('Submit error:', error);
-  //   } finally {
-  //     setIsDraft(false);
-  //   }
-  // };
-
-
   const handleSubmit = async (asDraft = false) => {
-    // console.log('handleSubmit called with asDraft:', asDraft);
-    // console.log('Form data before validation:', formData);
-    // console.log('Selected cluster:', selectedCluster);
-    // console.log('Selected node:', selectedNode);
     
     if (!asDraft && !validateForm()) {
       console.log('Validation failed');
@@ -266,12 +191,7 @@ export const CreateVM: React.FC<CreateVMProps> = ({onNavigate}) => {
         private_ips: (formData.private_ips || []).filter(ip => ip.trim() !== ''),
         allowed_ports: (formData.allowed_ports || []).filter(port => port.trim() !== '')
       };
-  
-/* The above code is a comment block in a TypeScript React file. It includes a console log statement
-that outputs the cleaned form data. The comment block is used to provide information or context
-about the code for other developers who may be working on the project. */
-      console.log('Cleaned form data:', cleanedFormData);
-      
+
       const result = await createVM(cleanedFormData);
       // console.log('CreateVM result:', result);
       
@@ -636,38 +556,6 @@ about the code for other developers who may be working on the project. */
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Custom Fields</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* <FormField label="Environment">
-                <select
-                  value={formData.custom_fields.environment}
-                  onChange={(e) => setFormData({ 
-                    ...formData, 
-                    custom_fields: { ...formData.custom_fields, environment: e.target.value }
-                  })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select environment</option>
-                  <option value="production">Production</option>
-                  <option value="staging">Staging</option>
-                  <option value="development">Development</option>
-                  <option value="testing">Testing</option>
-                </select>
-              </FormField> */}
-
-              {/* <FormField label="Access Level">
-                <select
-                  value={formData.custom_fields.access_level}
-                  onChange={(e) => setFormData({ 
-                    ...formData, 
-                    custom_fields: { ...formData.custom_fields, access_level: e.target.value }
-                  })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="critical">Critical</option>
-                </select>
-              </FormField> */}
 
               <FormField label="Backup Enabled">
                 <label className="flex items-center space-x-2">
