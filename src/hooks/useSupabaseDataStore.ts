@@ -363,12 +363,91 @@ export const useSupabaseDataStore = () => {
     }
   };
 
+  // const updateNode = async (id: string, updates: Partial<Node>) => {
+  //   try {
+  //     setLoading(true);
+  //     const { data, error } = await supabase.from('nodes').update(updates).eq('id', id).select().single();
+  //     if (error) throw error;
+  //     setNodes(prev => prev.map(node => node.id === id ? data : node));
+  //     showToast.success('Node updated successfully');
+  //     return handleSupabaseSuccess(data, 'update node');
+  //   } catch (error) {
+  //     showToast.error('Failed to update node');
+  //     return handleSupabaseError(error, 'update node');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
   const updateNode = async (id: string, updates: Partial<Node>) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from('nodes').update(updates).eq('id', id).select().single();
+  
+      // 1) Get current node (needed for validation and derived fields)
+      const { data: current, error: fetchError } = await supabase
+        .from('nodes')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (fetchError) throw fetchError;
+  
+      // 2) Sanitize payload: never send system-managed fields
+      const sanitized: Partial<Node> = { ...updates };
+      delete (sanitized as any).id;
+      delete (sanitized as any).created_at;
+      delete (sanitized as any).updated_at;
+  
+      // 3) Prepare current + new totals and allocated values (numeric!)
+      const allocatedCPU = Number(current.allocated_cpu_ghz || 0);
+      const allocatedRAM = Number(current.allocated_ram_gb || 0);
+      const allocatedStore = Number(current.allocated_storage_gb || 0);
+  
+      const newCores = Number(sanitized.total_physical_cores ?? current.total_physical_cores);
+      const newClock = Number(sanitized.cpu_clock_speed_ghz ?? current.cpu_clock_speed_ghz);
+      const newTotalRAM = Number(sanitized.total_ram_gb ?? current.total_ram_gb);
+      const newTotalStore = Number(sanitized.storage_capacity_gb ?? current.storage_capacity_gb);
+  
+      // 4) Recompute deriveds only when related totals changed
+  
+      // CPU recompute
+      if ('total_physical_cores' in sanitized || 'cpu_clock_speed_ghz' in sanitized) {
+        const totalCPU = (newCores || 0) * (newClock || 0);
+        if (totalCPU < allocatedCPU) {
+          showToast.error('Total CPU GHz cannot be less than allocated CPU');
+          return handleSupabaseError(new Error('Invalid CPU totals'), 'update node');
+        }
+        sanitized.total_cpu_ghz = totalCPU;
+        sanitized.available_cpu_ghz = totalCPU - allocatedCPU;
+      }
+  
+      // RAM recompute
+      if ('total_ram_gb' in sanitized) {
+        if ((newTotalRAM || 0) < allocatedRAM) {
+          showToast.error('Total RAM cannot be less than allocated RAM');
+          return handleSupabaseError(new Error('Invalid RAM totals'), 'update node');
+        }
+        sanitized.available_ram_gb = (newTotalRAM || 0) - allocatedRAM;
+      }
+  
+      // Storage recompute
+      if ('storage_capacity_gb' in sanitized) {
+        if ((newTotalStore || 0) < allocatedStore) {
+          showToast.error('Total storage cannot be less than allocated storage');
+          return handleSupabaseError(new Error('Invalid storage totals'), 'update node');
+        }
+        sanitized.available_storage_gb = (newTotalStore || 0) - allocatedStore;
+      }
+  
+      // 5) Persist update
+      const { data, error } = await supabase
+        .from('nodes')
+        .update(sanitized)
+        .eq('id', id)
+        .select()
+        .single();
       if (error) throw error;
-      setNodes(prev => prev.map(node => node.id === id ? data : node));
+  
+      setNodes(prev => prev.map(node => (node.id === id ? data : node)));
       showToast.success('Node updated successfully');
       return handleSupabaseSuccess(data, 'update node');
     } catch (error) {

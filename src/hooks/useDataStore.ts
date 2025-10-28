@@ -1469,6 +1469,9 @@ export const useDataStore = () => {
     }
   };
 
+  
+
+
   const deleteNode = async (id: string) => {
     try {
       setLoading(true);

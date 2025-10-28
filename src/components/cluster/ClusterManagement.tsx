@@ -244,7 +244,7 @@ export const ClusterManagement: React.FC = () => {
         // const cpuUtil = cluster.total_cpu_ghz > 0 ? (cluster.allocated_cpu_ghz / cluster.total_cpu_ghz * 100) : 0;
         // const ramUtil = cluster.total_ram_gb > 0 ? (cluster.allocated_ram_gb / cluster.total_ram_gb * 100) : 0;
 
-        const clusterVMs = vms.filter(vm => vm.cluster_id === cluster.id && vm.status === 'Active');
+      const clusterVMs = vms.filter(vm => vm.cluster_id === cluster.id && vm.status === 'Active');
       const allocatedCPU = clusterVMs.reduce((sum, vm) => sum + vm.cpu_ghz, 0);
       const allocatedRAM = clusterVMs.reduce((sum, vm) => sum + parseInt(vm.ram), 0);
       const cpuUtil = cluster.total_cpu_ghz > 0 ? (allocatedCPU / cluster.total_cpu_ghz * 100) : 0;

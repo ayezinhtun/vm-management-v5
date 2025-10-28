@@ -99,10 +99,24 @@ export const VMManagement: React.FC<VMManagementProps> = ({ onNavigate }) => {
           break;
 
         case 'edit':
+          // setEditingVM(vm);
+          // setEditFormData(vm);
+          // setShowEditModal(true);
+          // break;
           setEditingVM(vm);
           setEditFormData(vm);
+        
+          // Prime cluster/node selections so dependent effects and UI are in sync
+          setSelectedCluster(vm.cluster_id || '');
+          setSelectedNode(vm.node_id || '');
+        
+          // Prime node resources immediately so first validation has data
+          const node = nodes.find(n => n.id === vm.node_id);
+          setNodeResources(node || null);
+        
           setShowEditModal(true);
           break;
+        
 
         case 'delete':
           if (window.confirm(`Are you sure you want to delete VM "${vm.vm_name}"?`)) {
@@ -116,6 +130,9 @@ export const VMManagement: React.FC<VMManagementProps> = ({ onNavigate }) => {
     }
   };
 
+  
+  
+
 // Initialize selections when opening edit
 useEffect(() => {
   if (showEditModal && editingVM) {
@@ -124,18 +141,54 @@ useEffect(() => {
   }
 }, [showEditModal, editingVM]);
 
+
+
 // Update available nodes when cluster changes
+// useEffect(() => {
+//   if (selectedCluster) {
+//     const list = (nodes || []).filter(n => n.cluster_id === selectedCluster);
+//     setAvailableNodes(list);
+//     setEditFormData(prev => ({ ...prev, cluster_id: selectedCluster, node_id: '' }));
+//     setSelectedNode('');
+//   } else {
+//     setAvailableNodes([]);
+//     setSelectedNode('');
+//   }
+// }, [selectedCluster, nodes]);
 useEffect(() => {
   if (selectedCluster) {
     const list = (nodes || []).filter(n => n.cluster_id === selectedCluster);
     setAvailableNodes(list);
-    setEditFormData(prev => ({ ...prev, cluster_id: selectedCluster, node_id: '' }));
-    setSelectedNode('');
+
+    setEditFormData(prev => {
+      const keepNode =
+        editingVM &&
+        selectedCluster === (editingVM.cluster_id || '');
+
+      return {
+        ...prev,
+        cluster_id: selectedCluster,
+        node_id: keepNode ? (prev.node_id || editingVM.node_id || '') : ''
+      };
+    });
+
+    const shouldClearNode =
+      !(editingVM && selectedCluster === (editingVM.cluster_id || ''));
+
+    if (shouldClearNode) {
+      setSelectedNode('');
+      setNodeResources(null);
+    } else {
+      const node = nodes.find(n => n.id === (editingVM?.node_id || ''));
+      setSelectedNode(editingVM?.node_id || '');
+      setNodeResources(node || null);
+    }
   } else {
     setAvailableNodes([]);
     setSelectedNode('');
+    setNodeResources(null);
   }
-}, [selectedCluster, nodes]);
+}, [selectedCluster, nodes, editingVM]);
 
 // Keep edit form node_id in sync
 useEffect(() => {
@@ -152,6 +205,8 @@ useEffect(() => {
     setNodeResources(null);
   }
 }, [selectedNode, nodes]);
+
+
 
 // Dynamic list helpers for edit arrays
 const addPrivateIP = () => {
@@ -193,36 +248,41 @@ const validateEditForm = (): boolean => {
   const reqRam = parseInt(String(editFormData.ram || '').split(' ')[0]) || 0;
   const reqStorage = parseInt(String(editFormData.storage || '').split(' ')[0]) || 0;
 
+  const currentVmRam = parseInt(String(editingVM?.ram || '0').split(' ')[0]) || 0;
+  const currentVmCpu = Number(editingVM?.cpu_ghz || 0);
+  const currentVmStorage = parseInt(String(editingVM?.storage || '0').split(' ')[0]) || 0;
+
+  const effectiveAvailableRam = (nodeResources?.available_ram_gb ?? 0) + currentVmRam;
+  const effectiveAvailableCpu = (nodeResources?.available_cpu_ghz ?? 0) + currentVmCpu;
+  const effectiveAvailableStorage = (nodeResources?.available_storage_gb ?? 0) + currentVmStorage;
+
+  if (!selectedNode) {
+    errs.node_id = 'Please select a node first.';
+  }
+  if (!nodeResources) {
+    errs.node_id = errs.node_id || 'Node resources not loaded yet. Please wait a moment and try again.';
+  }
+
   if (nodeResources) {
-    if (cpuGhz > nodeResources.available_cpu_ghz) {
-      errs.cpu_ghz = `Insufficient CPU. Available: ${nodeResources.available_cpu_ghz} GHz`;
+    // RAM check
+    if (reqRam > effectiveAvailableRam) {
+      errs.ram = `Insufficient RAM. Available: ${effectiveAvailableRam} GB`;
     }
-    if (reqRam > nodeResources.available_ram_gb) {
-      errs.ram = `Insufficient RAM. Available: ${nodeResources.available_ram_gb} GB`;
+
+    // CPU check (GHz)
+    if (cpuGhz > effectiveAvailableCpu) {
+      errs.cpu_ghz = `Insufficient CPU. Available: ${effectiveAvailableCpu.toFixed(1)} GHz`;
     }
-    if (reqStorage > nodeResources.available_storage_gb) {
-      errs.storage = `Insufficient Storage. Available: ${nodeResources.available_storage_gb} GB`;
+
+    // Storage check
+    if (reqStorage > effectiveAvailableStorage) {
+      errs.storage = `Insufficient storage. Available: ${effectiveAvailableStorage} GB`;
     }
   }
 
   setEditErrors(errs);
   return Object.keys(errs).length === 0;
 };
-
-  // const handleEditSubmit = async () => {
-
-    
-  //   if (!editingVM || !editFormData) return;
-
-  //   try {
-  //     await updateVM(editingVM.id, editFormData);
-  //     setShowEditModal(false);
-  //     setEditingVM(null);
-  //     setEditFormData({});
-  //   } catch (error) {
-  //     console.error('Edit submit error:', error);
-  //   }
-  // };
 
   const handleEditSubmit = async () => {
     if (!editingVM || !editFormData) return;
@@ -1045,9 +1105,13 @@ const validateEditForm = (): boolean => {
                 }}
                 placeholder="e.g., 2.4"
               />
-              {nodeResources && (
-                <p className="text-xs text-gray-500 mt-1">Available: {nodeResources.available_cpu_ghz} GHz</p>
-              )}
+
+            {nodeResources && (
+              <p className="text-xs text-gray-500 mt-1">
+              Available: {nodeResources?.available_cpu_ghz ?? '—'} GHz
+            </p>
+            )}
+ 
               {editErrors.cpu_ghz && <p className="text-xs text-red-600 mt-1">{editErrors.cpu_ghz}</p>}
             </FormField>
 
@@ -1058,9 +1122,23 @@ const validateEditForm = (): boolean => {
               placeholder="e.g., 8 GB"
             />
             {nodeResources && (
-              <p className="text-xs text-gray-500 mt-1">Available: {nodeResources.available_ram_gb} GB</p>
+              <p className="text-xs text-gray-500 mt-1">Available: {nodeResources?.available_ram_gb ?? <>&mdash;</>} GB</p>
             )}
             {editErrors.ram && <p className="text-xs text-red-600 mt-1">{editErrors.ram}</p>}
+          </FormField>
+
+          <FormField label="Storage" required>
+            <Input
+              value={editFormData.storage || ''}
+              onChange={(e) => setEditFormData({ ...editFormData, storage: e.target.value })}
+              placeholder="e.g., 100 GB SSD"
+            />
+            {nodeResources && (
+              <p className="text-xs text-gray-500 mt-1">
+              Available: {nodeResources?.available_storage_gb ?? '—'} GB
+            </p>
+            )}
+            {editErrors.storage && <p className="text-xs text-red-600 mt-1">{editErrors.storage}</p>}
           </FormField>
 
               <FormField label="OS Type">
