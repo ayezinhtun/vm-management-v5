@@ -768,11 +768,11 @@ export const ClusterManagement: React.FC = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Allocated CPU:</span> 
-                      <span>{allocatedCPU} GHz</span>
+                      <span>{selectedCluster.allocated_cpu_ghz} GHz</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Available CPU:</span> 
-                      <span className="text-green-600">{availableCPU} GHz</span>
+                      <span className="text-green-600">{selectedCluster.available_cpu_ghz} GHz</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Total RAM:</span> 
@@ -780,11 +780,11 @@ export const ClusterManagement: React.FC = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Allocated RAM:</span> 
-                      <span>{allocatedRAM} GB</span>
+                      <span>{selectedCluster.allocated_ram_gb} GB</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Available RAM:</span> 
-                      <span className="text-green-600">{availableRAM} GB</span>
+                      <span className="text-green-600">{selectedCluster.available_ram_gb} GB</span>
                     </div>
                     <div className='flex justify-between'>
                       <span>Storage Type:</span>
@@ -794,6 +794,14 @@ export const ClusterManagement: React.FC = () => {
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Total Storage:</span> 
                       <span>{selectedCluster.total_storage_gb} GB ({selectedCluster.storage_type})</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-600">Allocated Storage:</span>
+                      <span>{selectedCluster.allocated_storage_gb ?? 0} GB</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-600">Available Storage:</span>
+                      <span>{selectedCluster.available_storage_gb ?? 0} GB</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-600">Nodes:</span> 

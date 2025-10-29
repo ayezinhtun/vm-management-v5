@@ -893,13 +893,19 @@ const validateEditForm = (): boolean => {
                 type="number"
                 step="0.1"
                 min="0.1"
-                max={nodeResources?.available_cpu_ghz ?? undefined}
-                value={Number(editFormData.cpu_ghz || 0)}
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value) || 0;
-                  const maxV = nodeResources?.available_cpu_ghz ?? Infinity;
-                  setEditFormData({ ...editFormData, cpu_ghz: Math.min(v, maxV) });
-                }}
+                // max={nodeResources?.available_cpu_ghz ?? undefined}
+                value={editFormData.cpu_ghz || 0}
+                // onChange={(e) => {
+                //   const v = parseFloat(e.target.value) || 0;
+                //   const maxV = nodeResources?.available_cpu_ghz ?? Infinity;
+                //   setEditFormData({ ...editFormData, cpu_ghz: Math.min(v, maxV) });
+                // }}
+                onChange={(e) =>
+                  setEditFormData({
+                    ...editFormData,
+                    cpu_ghz: parseFloat(e.target.value) || 0,
+                  })
+                }
                 placeholder="e.g., 2.4"
               />
 

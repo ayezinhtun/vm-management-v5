@@ -126,8 +126,51 @@ export const NodeManagement: React.FC = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleCreateSubmit = async () => {
-    if (!validateCreateForm()) return;
+    const selectedClusterId = createFormData?.cluster_id; 
+    const selectedClusterObj = clusters.find(c => c.id === selectedClusterId);
+
+    // Fallbacks if DB has NULLs: total - allocated
+    const totalCpuGhz = Number(selectedClusterObj?.total_cpu_ghz ?? 0);
+    const allocCpuGhz = Number(selectedClusterObj?.allocated_cpu_ghz ?? 0);
+    const availableCpuGhz = Number(
+      selectedClusterObj?.available_cpu_ghz ?? (totalCpuGhz - allocCpuGhz)
+    );
+
+    const totalRamGb = Number(selectedClusterObj?.total_ram_gb ?? 0);
+    const allocRamGb = Number(selectedClusterObj?.allocated_ram_gb ?? 0);
+    const availableRamGb = Number(
+      selectedClusterObj?.available_ram_gb ?? (totalRamGb - allocRamGb)
+    );
+
+    const totalStorageGb = Number(selectedClusterObj?.total_storage_gb ?? 0);
+    const allocStorageGb = Number(selectedClusterObj?.allocated_storage_gb ?? 0);
+    const availableStorageGb = Number(
+      selectedClusterObj?.available_storage_gb ?? (totalStorageGb - allocStorageGb)
+    );
+
+      const handleCreateSubmit = async () => {
+        if (!validateCreateForm()) return;
+
+        const cores = Number(createFormData.total_physical_cores || 0);
+        const clock = Number(createFormData.cpu_clock_speed_ghz || 0);
+        const reqCpu = cores * clock;
+        const reqRam = Number(createFormData.total_ram_gb || 0);
+        const reqStore = Number(createFormData.storage_capacity_gb || 0);
+
+    if (selectedClusterObj) {
+      if (reqCpu > availableCpuGhz) {
+        showToast.error(`Insufficient CPU. Available: ${availableCpuGhz.toFixed(1)} GHz`);
+        return;
+      }
+      if (reqRam > availableRamGb) {
+        showToast.error(`Insufficient RAM. Available: ${availableRamGb} GB`);
+        return;
+      }
+      if (reqStore > availableStorageGb) {
+        showToast.error(`Insufficient Storage. Available: ${availableStorageGb} GB`);
+        return;
+      }
+}
 
     try {
       // Calculate total CPU GHz
@@ -178,9 +221,96 @@ export const NodeManagement: React.FC = () => {
     }
   };
 
+  // const handleEditSubmit = async () => {
+  //   if (!editingNode || !editFormData) return;
+
+  //   try {
+  //     await updateNode(editingNode.id, editFormData);
+  //     setShowEditModal(false);
+  //     setEditingNode(null);
+  //     setEditFormData({});
+  //   } catch (error) {
+  //     console.error('Edit node error:', error);
+  //   }
+  // };
+
   const handleEditSubmit = async () => {
     if (!editingNode || !editFormData) return;
+  
+    // 1) Find the cluster this node belongs to
+    const editingCluster = clusters.find(c => c.id === editingNode.cluster_id);
+  
+    // 2) Old totals (from current node)
+    const oldTotalCpu = Number(editingNode.total_cpu_ghz || 0);
+    const oldTotalRam = Number(editingNode.total_ram_gb || 0);
+    const oldTotalStore = Number(editingNode.storage_capacity_gb || 0);
+  
+    // 3) New totals (from form, falling back to current)
+    const newCores = Number(editFormData.total_physical_cores ?? editingNode.total_physical_cores ?? 0);
+    const newClock = Number(editFormData.cpu_clock_speed_ghz ?? editingNode.cpu_clock_speed_ghz ?? 0);
+    const newTotalCpu = Number(
+      editFormData.total_cpu_ghz ??
+      (newCores * newClock) ??
+      oldTotalCpu
+    );
+    const newTotalRam = Number(editFormData.total_ram_gb ?? oldTotalRam);
+    const newTotalStore = Number(editFormData.storage_capacity_gb ?? oldTotalStore);
+  
+    // 4) Deltas (positive deltas must be covered by cluster available)
+    const deltaCpu = newTotalCpu - oldTotalCpu;
+    const deltaRam = newTotalRam - oldTotalRam;
+    const deltaStore = newTotalStore - oldTotalStore;
 
+  
+    // 5) Cluster available (with fallback if null in DB)
+    const clusterAvailCpu = Number(
+      editingCluster?.available_cpu_ghz ??
+      ((Number(editingCluster?.total_cpu_ghz || 0)) - (Number(editingCluster?.allocated_cpu_ghz || 0)))
+    );
+    const clusterAvailRam = Number(
+      editingCluster?.available_ram_gb ??
+      ((Number(editingCluster?.total_ram_gb || 0)) - (Number(editingCluster?.allocated_ram_gb || 0)))
+    );
+    const clusterAvailStore = Number(
+      editingCluster?.available_storage_gb ??
+      ((Number(editingCluster?.total_storage_gb || 0)) - (Number(editingCluster?.allocated_storage_gb || 0)))
+    );
+  
+    // 6) Node currently allocated (new totals cannot go below these)
+    const nodeAllocCpu = Number(editingNode.allocated_cpu_ghz || 0);
+    const nodeAllocRam = Number(editingNode.allocated_ram_gb || 0);
+    const nodeAllocStore = Number(editingNode.allocated_storage_gb || 0);
+  
+    // 7) Validate against node allocated
+    if (newTotalCpu < nodeAllocCpu) {
+      showToast.error(`Total CPU cannot be less than allocated CPU (${nodeAllocCpu} GHz)`);
+      return;
+    }
+    if (newTotalRam < nodeAllocRam) {
+      showToast.error(`Total RAM cannot be less than allocated RAM (${nodeAllocRam} GB)`);
+      return;
+    }
+    if (newTotalStore < nodeAllocStore) {
+      showToast.error(`Total storage cannot be less than allocated storage (${nodeAllocStore} GB)`);
+      return;
+    }
+  
+    // 8) Validate against cluster available for positive increases
+    if (deltaCpu > 0 && deltaCpu > clusterAvailCpu) {
+      showToast.error(`Insufficient Cluster CPU. Available: ${clusterAvailCpu.toFixed(1)} GHz`);
+      return;
+    }
+    if (deltaRam > 0 && deltaRam > clusterAvailRam) {
+      showToast.error(`Insufficient Cluster RAM. Available: ${clusterAvailRam} GB`);
+      return;
+    }
+    if (deltaStore > 0 && deltaStore > clusterAvailStore) {
+      showToast.error(`Insufficient Cluster Storage. Available: ${clusterAvailStore} GB`);
+      return;
+    }
+
+  
+    // 9) Proceed if all validations pass
     try {
       await updateNode(editingNode.id, editFormData);
       setShowEditModal(false);
@@ -190,6 +320,26 @@ export const NodeManagement: React.FC = () => {
       console.error('Edit node error:', error);
     }
   };
+
+  // Availability helpers for EDIT modal (cluster of the editing node)
+      const editClusterObj = editingNode
+      ? clusters.find(c => c.id === editingNode.cluster_id)
+      : undefined;
+
+      const editAvailCpuGhz = Number(
+      editClusterObj?.available_cpu_ghz ??
+      ((Number(editClusterObj?.total_cpu_ghz || 0)) - (Number(editClusterObj?.allocated_cpu_ghz || 0)))
+      );
+
+      const editAvailRamGb = Number(
+      editClusterObj?.available_ram_gb ??
+      ((Number(editClusterObj?.total_ram_gb || 0)) - (Number(editClusterObj?.allocated_ram_gb || 0)))
+      );
+
+      const editAvailStorageGb = Number(
+      editClusterObj?.available_storage_gb ??
+      ((Number(editClusterObj?.total_storage_gb || 0)) - (Number(editClusterObj?.allocated_storage_gb || 0)))
+      );
 
   const handleDelete = async (node: Node) => {
     const nodeVMs = getNodeVMs(node.id);
@@ -574,6 +724,12 @@ export const NodeManagement: React.FC = () => {
                   placeholder="16"
                   error={!!errors.total_physical_cores}
                 />
+
+                {selectedClusterObj && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Available CPU: {availableCpuGhz.toFixed(1)} GHz
+                    </p>
+                  )}
               </FormField>
 
               <FormField label="Logical Threads" required error={errors.total_logical_threads}>
@@ -597,6 +753,12 @@ export const NodeManagement: React.FC = () => {
                   placeholder="2.4"
                   error={!!errors.cpu_clock_speed_ghz}
                 />
+
+              {selectedClusterObj && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Available CPU: {availableCpuGhz.toFixed(1)} GHz
+                  </p>
+                )}
               </FormField>
             </div>
           </div>
@@ -614,6 +776,11 @@ export const NodeManagement: React.FC = () => {
                   placeholder="512"
                   error={!!errors.total_ram_gb}
                 />
+                {selectedClusterObj && (
+    <p className="text-xs text-gray-500 mt-1">
+      Available RAM: {availableRamGb} GB
+    </p>
+  )}
               </FormField>
 
               <FormField label="RAM Type" required>
@@ -676,6 +843,12 @@ export const NodeManagement: React.FC = () => {
                   placeholder="2000"
                   error={!!errors.storage_capacity_gb}
                 />
+
+{selectedClusterObj && (
+    <p className="text-xs text-gray-500 mt-1">
+      Available Storage: {availableStorageGb} GB
+    </p>
+  )}
               </FormField>
 
               <FormField label="RAID Configuration" required>
@@ -830,7 +1003,17 @@ export const NodeManagement: React.FC = () => {
                     type="number"
                     min="1"
                     value={editFormData.total_physical_cores ?? 0}
-                    onChange={(e) => setEditFormData({ ...editFormData, total_physical_cores: parseInt(e.target.value) || 0 })}
+                    // onChange={(e) => setEditFormData({ ...editFormData, total_physical_cores: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => {
+                      const cores = parseInt(e.target.value) || 0;
+                      const clock = Number(editFormData.cpu_clock_speed_ghz ?? editingNode?.cpu_clock_speed_ghz ?? 0);
+                      setEditFormData({
+                        ...editFormData,
+                        total_physical_cores: cores,
+                        // derive total CPU so the payload carries the change explicitly
+                        total_cpu_ghz: Number((cores * clock).toFixed(1)),
+                      });
+                    }}
                     placeholder="16"
                   />
                 </FormField>
@@ -851,9 +1034,25 @@ export const NodeManagement: React.FC = () => {
                     step="0.1"
                     min="0.1"
                     value={editFormData.cpu_clock_speed_ghz ?? 0}
-                    onChange={(e) => setEditFormData({ ...editFormData, cpu_clock_speed_ghz: parseFloat(e.target.value) || 0 })}
+                    // onChange={(e) => setEditFormData({ ...editFormData, cpu_clock_speed_ghz: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => {
+                      const clock = parseFloat(e.target.value) || 0;
+                      const cores = Number(editFormData.total_physical_cores ?? editingNode?.total_physical_cores ?? 0);
+                      setEditFormData({
+                        ...editFormData,
+                        cpu_clock_speed_ghz: clock,
+                        // derive total CPU so the payload carries the change explicitly
+                        total_cpu_ghz: Number((cores * clock).toFixed(1)),
+                      });
+                    }}
                     placeholder="2.4"
                   />
+
+                {editClusterObj && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Available CPU: {editAvailCpuGhz.toFixed(1)} GHz
+                  </p>
+                )}
                 </FormField>
               </div>
             </div>
@@ -870,6 +1069,11 @@ export const NodeManagement: React.FC = () => {
                     onChange={(e) => setEditFormData({ ...editFormData, total_ram_gb: parseInt(e.target.value) || 0 })}
                     placeholder="512"
                   />
+                  {editClusterObj && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Available RAM: {editAvailRamGb} GB
+                    </p>
+                  )}
                 </FormField>
 
                 <FormField label="RAM Type" required>
@@ -931,6 +1135,11 @@ export const NodeManagement: React.FC = () => {
                     onChange={(e) => setEditFormData({ ...editFormData, storage_capacity_gb: parseInt(e.target.value) || 0 })}
                     placeholder="2000"
                   />
+                  {editClusterObj && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Available Storage: {editAvailStorageGb} GB
+                  </p>
+                )}
                 </FormField>
 
                 <FormField label="RAID Configuration" required>

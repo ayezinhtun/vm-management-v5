@@ -132,22 +132,106 @@ export const useVMData = () => {
     }
   };
 
+  // const deleteVM = async (id: string) => {
+  //   try {
+  //     setLoading(true);
+      
+  //     // Simulate API call
+  //     await new Promise(resolve => setTimeout(resolve, 600));
+      
+  //     vmStore = vmStore.filter(vm => vm.id !== id);
+  //     setVMs([...vmStore]);
+      
+  //     showToast.success('VM deleted successfully');
+  //     return { success: true };
+  //   } catch (error) {
+  //     showToast.error('Failed to delete VM');
+  //     console.error('Delete VM error:', error);
+  //     return { success: false, error };
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
   const deleteVM = async (id: string) => {
     try {
       setLoading(true);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 600));
-      
-      vmStore = vmStore.filter(vm => vm.id !== id);
-      setVMs([...vmStore]);
-      
+  
+      // 1) Load VM to get node_id and resource usage
+      const { data: vm, error: vmErr } = await supabase
+        .from('vms')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (vmErr) throw vmErr;
+  
+      // 2) Delete the VM
+      const { error: delErr } = await supabase.from('vms').delete().eq('id', id);
+      if (delErr) throw delErr;
+  
+      // 3) Load parent node
+      const { data: node, error: nodeErr } = await supabase
+        .from('nodes')
+        .select('*')
+        .eq('id', vm.node_id)
+        .single();
+      if (nodeErr) throw nodeErr;
+  
+      // 4) VM resource usage (adjust these field names if your VM schema differs)
+      // Prefer exact numeric columns if you have them; otherwise parse
+      const vmCpu = Number(vm.cpu_ghz ?? vm.allocated_cpu_ghz ?? 0);
+      const vmRam = Number(vm.ram_gb ?? vm.allocated_ram_gb ?? 0);
+  
+      // Handle storage which may be number or string like "100 GB"
+      const vmStorageParsed = (() => {
+        if (vm.storage_gb != null) return Number(vm.storage_gb);
+        if (vm.allocated_storage_gb != null) return Number(vm.allocated_storage_gb);
+        if (typeof vm.storage === 'string') {
+          const m = vm.storage.match(/(\d+(\.\d+)?)/);
+          return m ? Number(m[1]) : 0;
+        }
+        return 0;
+      })();
+  
+      // 5) Current node numbers
+      const currAllocCpu = Number(node.allocated_cpu_ghz || 0);
+      const currAllocRam = Number(node.allocated_ram_gb || 0);
+      const currAllocStore = Number(node.allocated_storage_gb || 0);
+  
+      const currAvailCpu = Number(node.available_cpu_ghz || 0);
+      const currAvailRam = Number(node.available_ram_gb || 0);
+      const currAvailStore = Number(node.available_storage_gb || 0);
+  
+      // 6) Compute new node values: subtract from allocated, add back to available
+      const updatedNode = {
+        allocated_cpu_ghz: Math.max(0, currAllocCpu - vmCpu),
+        allocated_ram_gb: Math.max(0, currAllocRam - vmRam),
+        allocated_storage_gb: Math.max(0, currAllocStore - vmStorageParsed),
+        available_cpu_ghz: currAvailCpu + vmCpu,
+        available_ram_gb: currAvailRam + vmRam,
+        available_storage_gb: currAvailStore + vmStorageParsed,
+        vm_count: Math.max(0, Number(node.vm_count || 0) - 1),
+        updated_at: new Date().toISOString(),
+      };
+  
+      // 7) Persist node update
+      const { error: updErr } = await supabase
+        .from('nodes')
+        .update(updatedNode)
+        .eq('id', node.id);
+      if (updErr) throw updErr;
+  
+      // 8) Update local state
+      setVMs(prev => prev.filter(v => v.id !== id));
+      setNodes(prev =>
+        prev.map(n => (n.id === node.id ? { ...n, ...updatedNode } : n))
+      );
+  
       showToast.success('VM deleted successfully');
-      return { success: true };
+      return handleSupabaseSuccess(null, 'delete vm');
     } catch (error) {
       showToast.error('Failed to delete VM');
-      console.error('Delete VM error:', error);
-      return { success: false, error };
+      return handleSupabaseError(error, 'delete vm');
     } finally {
       setLoading(false);
     }

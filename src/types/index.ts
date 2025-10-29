@@ -121,7 +121,12 @@ export interface VM {
   cpu: string;
   cpu_ghz: number;
   ram: string;
+  allocated_cpu_ghz ?: number;
+  ram_gb ?: number;
+  allocated_ram_gb ?: number;
   storage: string;
+  storage_gb ?: number;
+  allocated_storage_gb ?: number;
   os_type?: string;
   os_version?: string;
   services: string;

@@ -160,39 +160,248 @@ export const useSupabaseDataStore = () => {
     }
   };
 
+  // const updateVM = async (id: string, updates: Partial<VM>) => {
+  //   try {
+  //     setLoading(true);
+  //     const { data: oldData } = await supabase.from('vms').select('*').eq('id', id).single();
+  //     const { data, error } = await supabase.from('vms').update(updates).eq('id', id).select().single();
+  //     if (error) throw error;
+  //     setVMs(prev => prev.map(vm => vm.id === id ? data : vm));
+  //     await addAuditLog('vms', 'UPDATE', id, oldData, data, 'System Admin', `Updated VM: ${data.vm_name}`);
+  //     showToast.success('VM updated successfully');
+  //     return handleSupabaseSuccess(data, 'update VM');
+  //   } catch (error) {
+  //     showToast.error('Failed to update VM');
+  //     return handleSupabaseError(error, 'update VM');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
   const updateVM = async (id: string, updates: Partial<VM>) => {
     try {
       setLoading(true);
-      const { data: oldData } = await supabase.from('vms').select('*').eq('id', id).single();
-      const { data, error } = await supabase.from('vms').update(updates).eq('id', id).select().single();
-      if (error) throw error;
-      setVMs(prev => prev.map(vm => vm.id === id ? data : vm));
-      await addAuditLog('vms', 'UPDATE', id, oldData, data, 'System Admin', `Updated VM: ${data.vm_name}`);
+  
+      // 1) Load current VM to compute deltas and know node_id
+      const { data: current, error: fetchVmErr } = await supabase
+        .from('vms')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (fetchVmErr) throw fetchVmErr;
+  
+      // 2) Compute "old" usage from current VM
+      const oldCpu = Number(current.cpu_ghz ?? current.allocated_cpu_ghz ?? 0);
+      // const oldRam = Number(current.ram_gb ?? current.allocated_ram_gb ?? 0);
+      const oldRam = (() => {
+        if (current.ram_gb != null) return Number(current.ram_gb);
+        if (current.allocated_ram_gb != null) return Number(current.allocated_ram_gb);
+        if (typeof current.ram === 'string') {
+          const m = current.ram.match(/(\d+(\.\d+)?)/);
+          return m ? Number(m[1]) : 0;
+        }
+        return 0;
+      })();
+      const oldStore = (() => {
+        if (current.storage_gb != null) return Number(current.storage_gb);
+        if (current.allocated_storage_gb != null) return Number(current.allocated_storage_gb);
+        if (typeof current.storage === 'string') {
+          const m = current.storage.match(/(\d+(\.\d+)?)/);
+          return m ? Number(m[1]) : 0;
+        }
+        return 0;
+      })();
+  
+      // 3) Compute "new" usage from updates (fall back to current if not provided)
+      const newCpu = Number(updates.cpu_ghz ?? updates.allocated_cpu_ghz ?? current.cpu_ghz ?? current.allocated_cpu_ghz ?? 0);
+      // const newRam = Number(updates.ram_gb ?? updates.allocated_ram_gb ?? current.ram_gb ?? current.allocated_ram_gb ?? 0);
+      const newRam = (() => {
+        if (updates.ram_gb != null) return Number(updates.ram_gb);
+        if (updates.allocated_ram_gb != null) return Number(updates.allocated_ram_gb);
+        if (typeof updates.ram === 'string') {
+          const m = updates.ram.match(/(\d+(\.\d+)?)/);
+          return m ? Number(m[1]) : 0;
+        }
+        // fall back to current values if not provided in updates
+        if (current.ram_gb != null) return Number(current.ram_gb);
+        if (current.allocated_ram_gb != null) return Number(current.allocated_ram_gb);
+        if (typeof current.ram === 'string') {
+          const m = current.ram.match(/(\d+(\.\d+)?)/);
+          return m ? Number(m[1]) : 0;
+        }
+        return 0;
+      })();
+      const newStore = (() => {
+        if (updates.storage_gb != null) return Number(updates.storage_gb);
+        if (updates.allocated_storage_gb != null) return Number(updates.allocated_storage_gb);
+        if (typeof updates.storage === 'string') {
+          const m = updates.storage.match(/(\d+(\.\d+)?)/);
+          return m ? Number(m[1]) : 0;
+        }
+        // fall back to current
+        return oldStore;
+      })();
+  
+      // 4) Deltas (what to apply to the node)
+      const deltaCpu = newCpu - oldCpu;
+      const deltaRam = newRam - oldRam;
+      const deltaStore = newStore - oldStore;
+  
+      // 5) Persist VM update
+      const { data: updatedVM, error: updVmErr } = await supabase
+        .from('vms')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      if (updVmErr) throw updVmErr;
+  
+      // 6) Adjust parent node resources if any delta
+      if (deltaCpu !== 0 || deltaRam !== 0 || deltaStore !== 0) {
+        // Load node
+        const { data: node, error: nodeErr } = await supabase
+          .from('nodes')
+          .select('*')
+          .eq('id', current.node_id)
+          .single();
+        if (nodeErr) throw nodeErr;
+  
+        const currAllocCpu = Number(node.allocated_cpu_ghz ?? 0);
+        const currAllocRam = Number(node.allocated_ram_gb ?? 0);
+        const currAllocStore = Number(node.allocated_storage_gb ?? 0);
+  
+        const currAvailCpu = Number(node.available_cpu_ghz ?? 0);
+        const currAvailRam = Number(node.available_ram_gb ?? 0);
+        const currAvailStore = Number(node.available_storage_gb ?? 0);
+  
+        // allocated += delta; available -= delta
+        const updatedNode = {
+          allocated_cpu_ghz: Math.max(0, currAllocCpu + deltaCpu),
+          allocated_ram_gb: Math.max(0, currAllocRam + deltaRam),
+          allocated_storage_gb: Math.max(0, currAllocStore + deltaStore),
+          available_cpu_ghz: currAvailCpu - deltaCpu,
+          available_ram_gb: currAvailRam - deltaRam,
+          available_storage_gb: currAvailStore - deltaStore,
+          updated_at: new Date().toISOString(),
+        };
+  
+        const { error: updNodeErr } = await supabase
+          .from('nodes')
+          .update(updatedNode)
+          .eq('id', node.id);
+        if (updNodeErr) throw updNodeErr;
+  
+        // Update local node state
+        setNodes(prev => prev.map(n => (n.id === node.id ? { ...n, ...updatedNode } : n)));
+      }
+  
+      // 7) Update local VM state
+      setVMs(prev => prev.map(v => (v.id === id ? updatedVM : v)));
+  
       showToast.success('VM updated successfully');
-      return handleSupabaseSuccess(data, 'update VM');
+      return handleSupabaseSuccess(updatedVM, 'update vm');
     } catch (error) {
       showToast.error('Failed to update VM');
-      return handleSupabaseError(error, 'update VM');
+      return handleSupabaseError(error, 'update vm');
     } finally {
       setLoading(false);
     }
   };
 
+  // const deleteVM = async (id: string) => {
+  //   try {
+  //     setLoading(true);
+  //     const { data: vmData } = await supabase.from('vms').select('*').eq('id', id).single();
+  //     const { error } = await supabase.from('vms').delete().eq('id', id);
+  //     if (error) throw error;
+  //     setVMs(prev => prev.filter(vm => vm.id !== id));
+  //     if (vmData) {
+  //       await addAuditLog('vms', 'DELETE', id, vmData, null, 'System Admin', `Deleted VM: ${vmData.vm_name}`);
+  //     }
+  //     showToast.success('VM deleted successfully');
+  //     return handleSupabaseSuccess(null, 'delete VM');
+  //   } catch (error) {
+  //     showToast.error('Failed to delete VM');
+  //     return handleSupabaseError(error, 'delete VM');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
   const deleteVM = async (id: string) => {
     try {
       setLoading(true);
-      const { data: vmData } = await supabase.from('vms').select('*').eq('id', id).single();
-      const { error } = await supabase.from('vms').delete().eq('id', id);
-      if (error) throw error;
-      setVMs(prev => prev.filter(vm => vm.id !== id));
-      if (vmData) {
-        await addAuditLog('vms', 'DELETE', id, vmData, null, 'System Admin', `Deleted VM: ${vmData.vm_name}`);
-      }
+  
+      // 1) Load VM to get node_id and resource usage
+      const { data: vm, error: vmErr } = await supabase
+        .from('vms')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (vmErr) throw vmErr;
+  
+      // 2) Delete the VM
+      const { error: delErr } = await supabase.from('vms').delete().eq('id', id);
+      if (delErr) throw delErr;
+  
+      // 3) Load parent node
+      const { data: node, error: nodeErr } = await supabase
+        .from('nodes')
+        .select('*')
+        .eq('id', vm.node_id)
+        .single();
+      if (nodeErr) throw nodeErr;
+  
+      // 4) VM resource usage (map to your schema)
+      const vmCpu = Number(vm.cpu_ghz ?? vm.allocated_cpu_ghz ?? 0);
+      const vmRam = Number(vm.ram_gb ?? vm.allocated_ram_gb ?? 0);
+      const vmStorageParsed = (() => {
+        if (vm.storage_gb != null) return Number(vm.storage_gb);
+        if (vm.allocated_storage_gb != null) return Number(vm.allocated_storage_gb);
+        if (typeof vm.storage === 'string') {
+          const m = vm.storage.match(/(\d+(\.\d+)?)/);
+          return m ? Number(m[1]) : 0;
+        }
+        return 0;
+      })();
+  
+      // 5) Current node numbers
+      const currAllocCpu = Number(node.allocated_cpu_ghz ?? 0);
+      const currAllocRam = Number(node.allocated_ram_gb ?? 0);
+      const currAllocStore = Number(node.allocated_storage_gb ?? 0);
+  
+      const currAvailCpu = Number(node.available_cpu_ghz ?? 0);
+      const currAvailRam = Number(node.available_ram_gb ?? 0);
+      const currAvailStore = Number(node.available_storage_gb ?? 0);
+  
+      // 6) Compute new node values: subtract from allocated, add back to available
+      const updatedNode = {
+        allocated_cpu_ghz: Math.max(0, currAllocCpu - vmCpu),
+        allocated_ram_gb: Math.max(0, currAllocRam - vmRam),
+        allocated_storage_gb: Math.max(0, currAllocStore - vmStorageParsed),
+        available_cpu_ghz: currAvailCpu + vmCpu,
+        available_ram_gb: currAvailRam + vmRam,
+        available_storage_gb: currAvailStore + vmStorageParsed,
+        vm_count: Math.max(0, Number(node.vm_count || 0) - 1),
+        updated_at: new Date().toISOString(),
+      };
+  
+      // 7) Persist node update
+      const { error: updErr } = await supabase
+        .from('nodes')
+        .update(updatedNode)
+        .eq('id', node.id);
+      if (updErr) throw updErr;
+  
+      // 8) Update local state
+      setVMs(prev => prev.filter(v => v.id !== id));
+      setNodes(prev => prev.map(n => (n.id === node.id ? { ...n, ...updatedNode } : n)));
+  
       showToast.success('VM deleted successfully');
-      return handleSupabaseSuccess(null, 'delete VM');
+      return handleSupabaseSuccess(null, 'delete vm');
     } catch (error) {
       showToast.error('Failed to delete VM');
-      return handleSupabaseError(error, 'delete VM');
+      return handleSupabaseError(error, 'delete vm');
     } finally {
       setLoading(false);
     }
@@ -202,26 +411,104 @@ export const useSupabaseDataStore = () => {
   const createCluster = async (clusterData: Omit<Cluster, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from('clusters').insert([clusterData]).select().single();
-      if (error) throw error;
-      setClusters(prev => [data, ...prev]);
-      await addAuditLog('clusters', 'CREATE', data.id, null, data, 'System Admin', `Created cluster: ${data.cluster_name}`);
-      showToast.success('Cluster created successfully');
-      return handleSupabaseSuccess(data, 'create cluster');
-    } catch (error) {
-      showToast.error('Failed to create cluster');
-      return handleSupabaseError(error, 'create cluster');
-    } finally {
-      setLoading(false);
-    }
+      // compute availability from totals − allocated (default allocated to 0)
+    const totalCPU = Number(clusterData.total_cpu_ghz || 0);
+    const allocCPU = Number(clusterData.allocated_cpu_ghz || 0);
+    const totalRAM = Number(clusterData.total_ram_gb || 0);
+    const allocRAM = Number(clusterData.allocated_ram_gb || 0);
+    const totalStore = Number(clusterData.total_storage_gb || 0);
+    const allocStore = Number(clusterData.allocated_storage_gb || 0);
+
+  const clusterPayload = {
+    ...clusterData,
+    allocated_cpu_ghz: allocCPU,
+    allocated_ram_gb: allocRAM,
+    allocated_storage_gb: allocStore,
+    available_cpu_ghz: totalCPU - allocCPU,
+    available_ram_gb: totalRAM - allocRAM,
+    available_storage_gb: totalStore - allocStore,
+    node_count: 0,
+    vm_count: 0,
   };
+
+  // Use this in the insert:
+  const { data: newCluster, error } = await supabase
+    .from('clusters')
+    .insert([clusterPayload])
+    .select()
+    .single();
+        // const { data, error } = await supabase.from('clusters').insert([clusterData]).select().single();
+        if (error) throw error;
+        // setClusters(prev => [data, ...prev]);
+        // await addAuditLog('clusters', 'CREATE', data.id, null, data, 'System Admin', `Created cluster: ${data.cluster_name}`);
+        // showToast.success('Cluster created successfully');
+        // return handleSupabaseSuccess(data, 'create cluster');
+
+        setClusters(prev => [newCluster, ...prev]);
+        await addAuditLog('clusters', 'CREATE', newCluster.id, null, newCluster, 'System Admin', `Created cluster: ${newCluster.cluster_name}`);
+        await addActivityLog('Cluster Created', 'Cluster', newCluster.id, newCluster.cluster_name, 'System Admin', `Created cluster ${newCluster.cluster_name}`, 'success');
+        return handleSupabaseSuccess(newCluster, 'create cluster');
+      } catch (error) {
+        showToast.error('Failed to create cluster');
+        return handleSupabaseError(error, 'create cluster');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  // const updateCluster = async (id: string, updates: Partial<Cluster>) => {
+  //   try {
+  //     setLoading(true);
+  //     const { data, error } = await supabase.from('clusters').update(updates).eq('id', id).select().single();
+  //     if (error) throw error;
+  //     setClusters(prev => prev.map(cluster => cluster.id === id ? data : cluster));
+  //     showToast.success('Cluster updated successfully');
+  //     return handleSupabaseSuccess(data, 'update cluster');
+  //   } catch (error) {
+  //     showToast.error('Failed to update cluster');
+  //     return handleSupabaseError(error, 'update cluster');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
   const updateCluster = async (id: string, updates: Partial<Cluster>) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from('clusters').update(updates).eq('id', id).select().single();
+      const { data: current, error: fetchErr } = await supabase
+        .from('clusters')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (fetchErr) throw fetchErr;
+  
+      const totalCPU = Number(updates.total_cpu_ghz ?? current.total_cpu_ghz ?? 0);
+      const allocCPU = Number(updates.allocated_cpu_ghz ?? current.allocated_cpu_ghz ?? 0);
+      const totalRAM = Number(updates.total_ram_gb ?? current.total_ram_gb ?? 0);
+      const allocRAM = Number(updates.allocated_ram_gb ?? current.allocated_ram_gb ?? 0);
+      const totalStore = Number(updates.total_storage_gb ?? current.total_storage_gb ?? 0);
+      const allocStore = Number(updates.allocated_storage_gb ?? current.allocated_storage_gb ?? 0);
+  
+      const sanitized: any = { ...updates };
+      if ('total_cpu_ghz' in updates || 'allocated_cpu_ghz' in updates) {
+        sanitized.available_cpu_ghz = totalCPU - allocCPU;
+      }
+      if ('total_ram_gb' in updates || 'allocated_ram_gb' in updates) {
+        sanitized.available_ram_gb = totalRAM - allocRAM;
+      }
+      if ('total_storage_gb' in updates || 'allocated_storage_gb' in updates) {
+        sanitized.available_storage_gb = totalStore - allocStore;
+      }
+  
+      const { data, error } = await supabase
+        .from('clusters')
+        .update(sanitized)
+        .eq('id', id)
+        .select()
+        .single();
       if (error) throw error;
-      setClusters(prev => prev.map(cluster => cluster.id === id ? data : cluster));
+  
+      setClusters(prev => prev.map(c => (c.id === id ? data : c)));
       showToast.success('Cluster updated successfully');
       return handleSupabaseSuccess(data, 'update cluster');
     } catch (error) {
@@ -347,93 +634,354 @@ export const useSupabaseDataStore = () => {
   };
 
   // Node CRUD operations
-  const createNode = async (nodeData: Omit<Node, 'id' | 'created_at' | 'updated_at'>) => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase.from('nodes').insert([nodeData]).select().single();
-      if (error) throw error;
-      setNodes(prev => [data, ...prev]);
-      showToast.success('Node created successfully');
-      return handleSupabaseSuccess(data, 'create node');
-    } catch (error) {
-      showToast.error('Failed to create node');
-      return handleSupabaseError(error, 'create node');
-    } finally {
-      setLoading(false);
+  // const createNode = async (nodeData: Omit<Node, 'id' | 'created_at' | 'updated_at'>) => {
+  //   try {
+  //     setLoading(true);
+  //     const { data, error } = await supabase.from('nodes').insert([nodeData]).select().single();
+  //     if (error) throw error;
+  //     setNodes(prev => [data, ...prev]);
+  //     showToast.success('Node created successfully');
+  //     return handleSupabaseSuccess(data, 'create node');
+  //   } catch (error) {
+  //     showToast.error('Failed to create node');
+  //     return handleSupabaseError(error, 'create node');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+  // Node CRUD operations
+const createNode = async (nodeData: Omit<Node, 'id' | 'created_at' | 'updated_at'>) => {
+  try {
+    setLoading(true);
+
+    // 1) Load cluster (for validation and later DB update)
+    const { data: cluster, error: clusterErr } = await supabase
+      .from('clusters')
+      .select('*')
+      .eq('id', nodeData.cluster_id)
+      .single();
+    if (clusterErr) throw clusterErr;
+
+    // 2) Compute node totals (numeric)
+    const nodeTotalCpu = Number(
+      nodeData.total_cpu_ghz ??
+      (Number(nodeData.total_physical_cores || 0) * Number(nodeData.cpu_clock_speed_ghz || 0))
+    );
+    const nodeTotalRam = Number(nodeData.total_ram_gb || 0);
+    const nodeTotalStore = Number(nodeData.storage_capacity_gb || 0);
+
+    // 3) Compute effective cluster available (fallback if DB has NULLs)
+    const clusterAvailCpu = Number(
+      cluster.available_cpu_ghz ?? (Number(cluster.total_cpu_ghz || 0) - Number(cluster.allocated_cpu_ghz || 0))
+    );
+    const clusterAvailRam = Number(
+      cluster.available_ram_gb ?? (Number(cluster.total_ram_gb || 0) - Number(cluster.allocated_ram_gb || 0))
+    );
+    const clusterAvailStore = Number(
+      cluster.available_storage_gb ?? (Number(cluster.total_storage_gb || 0) - Number(cluster.allocated_storage_gb || 0))
+    );
+
+    // 4) Validate against cluster available
+    if (nodeTotalCpu > clusterAvailCpu) {
+      showToast.error(`Insufficient Cluster CPU. Available: ${clusterAvailCpu} GHz`);
+      return handleSupabaseError(new Error('Insufficient cluster CPU'), 'create node');
     }
-  };
+    if (nodeTotalRam > clusterAvailRam) {
+      showToast.error(`Insufficient Cluster RAM. Available: ${clusterAvailRam} GB`);
+      return handleSupabaseError(new Error('Insufficient cluster RAM'), 'create node');
+    }
+    if (nodeTotalStore > clusterAvailStore) {
+      showToast.error(`Insufficient Cluster Storage. Available: ${clusterAvailStore} GB`);
+      return handleSupabaseError(new Error('Insufficient cluster storage'), 'create node');
+    }
+
+    // 5) Build node payload with derived fields
+    const allocCPU = Number(nodeData.allocated_cpu_ghz || 0);
+    const allocRAM = Number(nodeData.allocated_ram_gb || 0);
+    const allocStore = Number(nodeData.allocated_storage_gb || 0);
+
+    const nodePayload = {
+      ...nodeData,
+      total_cpu_ghz: nodeTotalCpu,
+      available_cpu_ghz: nodeTotalCpu - allocCPU,
+      available_ram_gb: nodeTotalRam - allocRAM,
+      available_storage_gb: nodeTotalStore - allocStore,
+      vm_count: 0,
+    };
+
+    // 6) Insert node
+    const { data: newNode, error: insertErr } = await supabase
+      .from('nodes')
+      .insert([nodePayload])
+      .select()
+      .single();
+    if (insertErr) throw insertErr;
+
+    // 7) Persist cluster availability (decrease) and increment node_count
+    const { error: clusterUpdateErr } = await supabase
+      .from('clusters')
+      // .update({
+      //   available_cpu_ghz: clusterAvailCpu - nodeTotalCpu,
+      //   available_ram_gb: clusterAvailRam - nodeTotalRam,
+      //   available_storage_gb: clusterAvailStore - nodeTotalStore,
+      //   node_count: Number(cluster.node_count || 0) + 1,
+      //   updated_at: new Date().toISOString(),
+      // })
+      .update({
+        available_cpu_ghz: clusterAvailCpu - nodeTotalCpu,
+        available_ram_gb: clusterAvailRam - nodeTotalRam,
+        available_storage_gb: clusterAvailStore - nodeTotalStore,
+        allocated_cpu_ghz: Number(cluster.allocated_cpu_ghz || 0) + nodeTotalCpu,
+        allocated_ram_gb: Number(cluster.allocated_ram_gb || 0) + nodeTotalRam,
+        allocated_storage_gb: Number(cluster.allocated_storage_gb || 0) + nodeTotalStore,
+        node_count: Number(cluster.node_count || 0) + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', nodeData.cluster_id);
+    if (clusterUpdateErr) throw clusterUpdateErr;
+
+    // 8) Update local state
+    setNodes(prev => [newNode, ...prev]);
+    setClusters(prev => prev.map(c =>
+      c.id === cluster.id
+        ? {
+            ...c,
+            // available_cpu_ghz: clusterAvailCpu - nodeTotalCpu,
+            // available_ram_gb: clusterAvailRam - nodeTotalRam,
+            // available_storage_gb: clusterAvailStore - nodeTotalStore,
+            // node_count: Number(cluster.node_count || 0) + 1,
+            // updated_at: new Date().toISOString(),
+
+            available_cpu_ghz: clusterAvailCpu - nodeTotalCpu,
+            available_ram_gb: clusterAvailRam - nodeTotalRam,
+            available_storage_gb: clusterAvailStore - nodeTotalStore,
+            allocated_cpu_ghz: Number(cluster.allocated_cpu_ghz || 0) + nodeTotalCpu,
+            allocated_ram_gb: Number(cluster.allocated_ram_gb || 0) + nodeTotalRam,
+            allocated_storage_gb: Number(cluster.allocated_storage_gb || 0) + nodeTotalStore,
+            node_count: Number(cluster.node_count || 0) + 1,
+            updated_at: new Date().toISOString(),
+          }
+        : c
+    ));
+
+    showToast.success('Node created successfully');
+    return handleSupabaseSuccess(newNode, 'create node');
+  } catch (error) {
+    showToast.error('Failed to create node');
+    return handleSupabaseError(error, 'create node');
+  } finally {
+    setLoading(false);
+  }
+};
+
+  // const updateNode = async (id: string, updates: Partial<Node>) => {
+  //   try {
+  //     setLoading(true);
+  
+  //     // 1) Get current node (needed for validation and derived fields)
+  //     const { data: current, error: fetchError } = await supabase
+  //       .from('nodes')
+  //       .select('*')
+  //       .eq('id', id)
+  //       .single();
+  //     if (fetchError) throw fetchError;
+  
+  //     // 2) Sanitize payload: never send system-managed fields
+  //     const sanitized: Partial<Node> = { ...updates };
+  //     delete (sanitized as any).id;
+  //     delete (sanitized as any).created_at;
+  //     delete (sanitized as any).updated_at;
+  
+  //     // 3) Prepare current + new totals and allocated values (numeric!)
+  //     const allocatedCPU = Number(current.allocated_cpu_ghz || 0);
+  //     const allocatedRAM = Number(current.allocated_ram_gb || 0);
+  //     const allocatedStore = Number(current.allocated_storage_gb || 0);
+  
+  //     const newCores = Number(sanitized.total_physical_cores ?? current.total_physical_cores);
+  //     const newClock = Number(sanitized.cpu_clock_speed_ghz ?? current.cpu_clock_speed_ghz);
+  //     const newTotalRAM = Number(sanitized.total_ram_gb ?? current.total_ram_gb);
+  //     const newTotalStore = Number(sanitized.storage_capacity_gb ?? current.storage_capacity_gb);
+  
+  //     // 4) Recompute deriveds only when related totals changed
+  
+  //     // CPU recompute
+  //     if ('total_physical_cores' in sanitized || 'cpu_clock_speed_ghz' in sanitized) {
+  //       const totalCPU = (newCores || 0) * (newClock || 0);
+  //       if (totalCPU < allocatedCPU) {
+  //         showToast.error('Total CPU GHz cannot be less than allocated CPU');
+  //         return handleSupabaseError(new Error('Invalid CPU totals'), 'update node');
+  //       }
+  //       sanitized.total_cpu_ghz = totalCPU;
+  //       sanitized.available_cpu_ghz = totalCPU - allocatedCPU;
+  //     }
+  
+  //     // RAM recompute
+  //     if ('total_ram_gb' in sanitized) {
+  //       if ((newTotalRAM || 0) < allocatedRAM) {
+  //         showToast.error('Total RAM cannot be less than allocated RAM');
+  //         return handleSupabaseError(new Error('Invalid RAM totals'), 'update node');
+  //       }
+  //       sanitized.available_ram_gb = (newTotalRAM || 0) - allocatedRAM;
+  //     }
+  
+  //     // Storage recompute
+  //     if ('storage_capacity_gb' in sanitized) {
+  //       if ((newTotalStore || 0) < allocatedStore) {
+  //         showToast.error('Total storage cannot be less than allocated storage');
+  //         return handleSupabaseError(new Error('Invalid storage totals'), 'update node');
+  //       }
+  //       sanitized.available_storage_gb = (newTotalStore || 0) - allocatedStore;
+  //     }
+  
+  //     // 5) Persist update
+  //     const { data, error } = await supabase
+  //       .from('nodes')
+  //       .update(sanitized)
+  //       .eq('id', id)
+  //       .select()
+  //       .single();
+  //     if (error) throw error;
+  
+  //     setNodes(prev => prev.map(node => (node.id === id ? data : node)));
+  //     showToast.success('Node updated successfully');
+  //     return handleSupabaseSuccess(data, 'update node');
+  //   } catch (error) {
+  //     showToast.error('Failed to update node');
+  //     return handleSupabaseError(error, 'update node');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+  // const deleteNode = async (id: string) => {
+  //   try {
+  //     setLoading(true);
+  //     const { error } = await supabase.from('nodes').delete().eq('id', id);
+  //     if (error) throw error;
+  //     setNodes(prev => prev.filter(node => node.id !== id));
+  //     showToast.success('Node deleted successfully');
+  //     return handleSupabaseSuccess(null, 'delete node');
+  //   } catch (error) {
+  //     showToast.error('Failed to delete node');
+  //     return handleSupabaseError(error, 'delete node');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
 
   const updateNode = async (id: string, updates: Partial<Node>) => {
     try {
       setLoading(true);
   
-      // 1) Get current node (needed for validation and derived fields)
-      const { data: current, error: fetchError } = await supabase
+      // 1) Load current node (to compute deltas and know cluster_id)
+      const { data: current, error: fetchNodeErr } = await supabase
         .from('nodes')
         .select('*')
         .eq('id', id)
         .single();
-      if (fetchError) throw fetchError;
+      if (fetchNodeErr) throw fetchNodeErr;
   
-      // 2) Sanitize payload: never send system-managed fields
-      const sanitized: Partial<Node> = { ...updates };
-      delete (sanitized as any).id;
-      delete (sanitized as any).created_at;
-      delete (sanitized as any).updated_at;
+      // 2) Compute new node totals
+      // CPU: prefer explicit total_cpu_ghz in updates, otherwise cores*clock
+      const newCores = Number(updates.total_physical_cores ?? current.total_physical_cores ?? 0);
+      const newClock = Number(updates.cpu_clock_speed_ghz ?? current.cpu_clock_speed_ghz ?? 0);
+      const newTotalCpu = Number(
+        updates.total_cpu_ghz ??
+        (newCores * newClock) ??
+        current.total_cpu_ghz ??
+        0
+      );
   
-      // 3) Prepare current + new totals and allocated values (numeric!)
-      const allocatedCPU = Number(current.allocated_cpu_ghz || 0);
-      const allocatedRAM = Number(current.allocated_ram_gb || 0);
-      const allocatedStore = Number(current.allocated_storage_gb || 0);
+      const newTotalRam = Number(updates.total_ram_gb ?? current.total_ram_gb ?? 0);
+      const newTotalStore = Number(updates.storage_capacity_gb ?? current.storage_capacity_gb ?? 0);
   
-      const newCores = Number(sanitized.total_physical_cores ?? current.total_physical_cores);
-      const newClock = Number(sanitized.cpu_clock_speed_ghz ?? current.cpu_clock_speed_ghz);
-      const newTotalRAM = Number(sanitized.total_ram_gb ?? current.total_ram_gb);
-      const newTotalStore = Number(sanitized.storage_capacity_gb ?? current.storage_capacity_gb);
+      // Old totals
+      const oldTotalCpu = Number(current.total_cpu_ghz ?? 0);
+      const oldTotalRam = Number(current.total_ram_gb ?? 0);
+      const oldTotalStore = Number(current.storage_capacity_gb ?? 0);
   
-      // 4) Recompute deriveds only when related totals changed
+      // 3) Deltas for cluster adjustment
+      const deltaCpu = newTotalCpu - oldTotalCpu;
+      const deltaRam = newTotalRam - oldTotalRam;
+      const deltaStore = newTotalStore - oldTotalStore;
   
-      // CPU recompute
-      if ('total_physical_cores' in sanitized || 'cpu_clock_speed_ghz' in sanitized) {
-        const totalCPU = (newCores || 0) * (newClock || 0);
-        if (totalCPU < allocatedCPU) {
-          showToast.error('Total CPU GHz cannot be less than allocated CPU');
-          return handleSupabaseError(new Error('Invalid CPU totals'), 'update node');
-        }
-        sanitized.total_cpu_ghz = totalCPU;
-        sanitized.available_cpu_ghz = totalCPU - allocatedCPU;
-      }
+      // 4) Recompute node available = total − allocated
+      const nodeAllocCpu = Number(current.allocated_cpu_ghz ?? 0);
+      const nodeAllocRam = Number(current.allocated_ram_gb ?? 0);
+      const nodeAllocStore = Number(current.allocated_storage_gb ?? 0);
   
-      // RAM recompute
-      if ('total_ram_gb' in sanitized) {
-        if ((newTotalRAM || 0) < allocatedRAM) {
-          showToast.error('Total RAM cannot be less than allocated RAM');
-          return handleSupabaseError(new Error('Invalid RAM totals'), 'update node');
-        }
-        sanitized.available_ram_gb = (newTotalRAM || 0) - allocatedRAM;
-      }
+      const nodeSanitized: Partial<Node> = {
+        ...updates,
+        total_cpu_ghz: newTotalCpu,
+        total_ram_gb: newTotalRam,
+        storage_capacity_gb: newTotalStore,
+        available_cpu_ghz: newTotalCpu - nodeAllocCpu,
+        available_ram_gb: newTotalRam - nodeAllocRam,
+        available_storage_gb: newTotalStore - nodeAllocStore,
+        updated_at: new Date().toISOString(),
+      };
   
-      // Storage recompute
-      if ('storage_capacity_gb' in sanitized) {
-        if ((newTotalStore || 0) < allocatedStore) {
-          showToast.error('Total storage cannot be less than allocated storage');
-          return handleSupabaseError(new Error('Invalid storage totals'), 'update node');
-        }
-        sanitized.available_storage_gb = (newTotalStore || 0) - allocatedStore;
-      }
-  
-      // 5) Persist update
-      const { data, error } = await supabase
+      // 5) Update the node
+      const { data: updatedNode, error: updNodeErr } = await supabase
         .from('nodes')
-        .update(sanitized)
+        .update(nodeSanitized)
         .eq('id', id)
         .select()
         .single();
-      if (error) throw error;
+      if (updNodeErr) throw updNodeErr;
   
-      setNodes(prev => prev.map(node => (node.id === id ? data : node)));
+      // 6) If totals changed, adjust the parent cluster
+      if (deltaCpu !== 0 || deltaRam !== 0 || deltaStore !== 0) {
+        // Load cluster
+        const { data: cluster, error: fetchClusterErr } = await supabase
+          .from('clusters')
+          .select('*')
+          .eq('id', current.cluster_id)
+          .single();
+        if (fetchClusterErr) throw fetchClusterErr;
+  
+        const currAllocCpu = Number(cluster.allocated_cpu_ghz ?? 0);
+        const currAllocRam = Number(cluster.allocated_ram_gb ?? 0);
+        const currAllocStore = Number(cluster.allocated_storage_gb ?? 0);
+  
+        const currAvailCpu = Number(
+          cluster.available_cpu_ghz ?? ((Number(cluster.total_cpu_ghz ?? 0)) - (Number(cluster.allocated_cpu_ghz ?? 0)))
+        );
+        const currAvailRam = Number(
+          cluster.available_ram_gb ?? ((Number(cluster.total_ram_gb ?? 0)) - (Number(cluster.allocated_ram_gb ?? 0)))
+        );
+        const currAvailStore = Number(
+          cluster.available_storage_gb ?? ((Number(cluster.total_storage_gb ?? 0)) - (Number(cluster.allocated_storage_gb ?? 0)))
+        );
+  
+        const updatedCluster = {
+          allocated_cpu_ghz: Math.max(0, currAllocCpu + deltaCpu),
+          allocated_ram_gb: Math.max(0, currAllocRam + deltaRam),
+          allocated_storage_gb: Math.max(0, currAllocStore + deltaStore),
+          available_cpu_ghz: currAvailCpu - deltaCpu,
+          available_ram_gb: currAvailRam - deltaRam,
+          available_storage_gb: currAvailStore - deltaStore,
+          updated_at: new Date().toISOString(),
+        };
+  
+        const { error: updClusterErr } = await supabase
+          .from('clusters')
+          .update(updatedCluster)
+          .eq('id', current.cluster_id);
+        if (updClusterErr) throw updClusterErr;
+  
+        // Update local cluster state
+        setClusters(prev =>
+          prev.map(c => (c.id === current.cluster_id ? { ...c, ...updatedCluster } : c))
+        );
+      }
+  
+      // 7) Update local node state
+      setNodes(prev => prev.map(n => (n.id === id ? updatedNode : n)));
+  
       showToast.success('Node updated successfully');
-      return handleSupabaseSuccess(data, 'update node');
+      return handleSupabaseSuccess(updatedNode, 'update node');
     } catch (error) {
       showToast.error('Failed to update node');
       return handleSupabaseError(error, 'update node');
@@ -445,9 +993,69 @@ export const useSupabaseDataStore = () => {
   const deleteNode = async (id: string) => {
     try {
       setLoading(true);
-      const { error } = await supabase.from('nodes').delete().eq('id', id);
-      if (error) throw error;
-      setNodes(prev => prev.filter(node => node.id !== id));
+  
+      // 1) Load node to know its cluster and totals
+      const { data: node, error: fetchNodeErr } = await supabase
+        .from('nodes')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (fetchNodeErr) throw fetchNodeErr;
+  
+      // 2) Delete the node
+      const { error: delErr } = await supabase.from('nodes').delete().eq('id', id);
+      if (delErr) throw delErr;
+  
+      // 3) Load cluster (for current values)
+      const { data: cluster, error: clusterErr } = await supabase
+        .from('clusters')
+        .select('*')
+        .eq('id', node.cluster_id)
+        .single();
+      if (clusterErr) throw clusterErr;
+  
+      // 4) Node totals
+      const nodeTotalCpu = Number(node.total_cpu_ghz || 0);
+      const nodeTotalRam = Number(node.total_ram_gb || 0);
+      const nodeTotalStore = Number(node.storage_capacity_gb || 0);
+  
+      // 5) Compute current cluster values with fallbacks if null
+      const currAvailCpu = Number(
+        cluster.available_cpu_ghz ?? (Number(cluster.total_cpu_ghz || 0) - Number(cluster.allocated_cpu_ghz || 0))
+      );
+      const currAvailRam = Number(
+        cluster.available_ram_gb ?? (Number(cluster.total_ram_gb || 0) - Number(cluster.allocated_ram_gb || 0))
+      );
+      const currAvailStore = Number(
+        cluster.available_storage_gb ?? (Number(cluster.total_storage_gb || 0) - Number(cluster.allocated_storage_gb || 0))
+      );
+  
+      const currAllocCpu = Number(cluster.allocated_cpu_ghz || 0);
+      const currAllocRam = Number(cluster.allocated_ram_gb || 0);
+      const currAllocStore = Number(cluster.allocated_storage_gb || 0);
+  
+      // 6) Update cluster: add back to available, subtract from allocated, decrement node_count
+      const updatedCluster = {
+        available_cpu_ghz: currAvailCpu + nodeTotalCpu,
+        available_ram_gb: currAvailRam + nodeTotalRam,
+        available_storage_gb: currAvailStore + nodeTotalStore,
+        allocated_cpu_ghz: Math.max(0, currAllocCpu - nodeTotalCpu),
+        allocated_ram_gb: Math.max(0, currAllocRam - nodeTotalRam),
+        allocated_storage_gb: Math.max(0, currAllocStore - nodeTotalStore),
+        node_count: Math.max(0, Number(cluster.node_count || 0) - 1),
+        updated_at: new Date().toISOString(),
+      };
+  
+      const { error: updErr } = await supabase
+        .from('clusters')
+        .update(updatedCluster)
+        .eq('id', node.cluster_id);
+      if (updErr) throw updErr;
+  
+      // 7) Update local state
+      setNodes(prev => prev.filter(n => n.id !== id));
+      setClusters(prev => prev.map(c => c.id === cluster.id ? { ...c, ...updatedCluster } : c));
+  
       showToast.success('Node deleted successfully');
       return handleSupabaseSuccess(null, 'delete node');
     } catch (error) {
